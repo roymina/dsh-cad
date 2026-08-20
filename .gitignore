@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Local tool and browser state
+.playwright-mcp/
+
+# Generated CAD exports and temporary verification output
+cad-output/
+tmp-output/
+
+# Test and runtime artifacts
+coverage/
+*.log
+
+# Operating-system files
+.DS_Store
+Thumbs.db
