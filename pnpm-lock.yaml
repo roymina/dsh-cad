@@ -18,8 +18,8 @@ importers:
         specifier: 3.18.1
         version: 3.18.1
       '@node-projects/acad-ts':
-        specifier: 3.0.1
-        version: 3.0.1
+        specifier: 3.0.2
+        version: 3.0.2
       '@resvg/resvg-js':
         specifier: 2.6.2
         version: 2.6.2
@@ -325,8 +325,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@node-projects/acad-ts@3.0.1':
-    resolution: {integrity: sha512-23fjf7OmaXDHBMaXOzgOd+QJJfP8hXeql1Z1979NXcLXjn4mkoOp5X81mJyFsABWFOdV/O8SzgyHH7lwRiF9PA==}
+  '@node-projects/acad-ts@3.0.2':
+    resolution: {integrity: sha512-o9cD4pX9/gpxrM4S2+phOd8OUCr59EFcpgETe1pgOMocztUJzx7OslSMmi0Af2lO1/xKo+PFXQwTZuRiDOjd5A==}
 
   '@resvg/resvg-js-android-arm-eabi@2.6.2':
     resolution: {integrity: sha512-FrJibrAk6v29eabIPgcTUMPXiEz8ssrAk7TXxsiZzww9UTQ1Z5KAbFJs+Z0Ez+VZTYgnE5IQJqBcoSiMebtPHA==}
@@ -1006,7 +1006,7 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@node-projects/acad-ts@3.0.1': {}
+  '@node-projects/acad-ts@3.0.2': {}
 
   '@resvg/resvg-js-android-arm-eabi@2.6.2':
     optional: true

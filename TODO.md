@@ -52,7 +52,7 @@
 - [x] 4.5 块与属性：Insert 属性提取、块定义树与嵌套关系、每个块引用次数与插入位置、动态块/匿名块关联信息、循环引用检测、受深度/实例限制的块展开。
 - [ ] 4.6 控制模型上下文：默认返回条数降至 100–500；文件报告上限与模型响应上限分开配置；`saveAs` 默认只返回摘要/记录数/截断状态/路径/哈希；提供 `summary` 模式生成结构化图纸概览。
 - [x] 4.7 发布流程：增加 `prepack`（typecheck + test + build）、CI（typecheck/test/build/pack dry-run/生产依赖审计）、`exports`/Node `engines`/repository/keywords/publishConfig/sideEffects 声明，并明确 `lib` 是否提交。
-- [ ] 4.8 依赖管理：确认 `@deepseek-ai/dsh-tools` 的 optional peer 依赖是否成立；建立回归测试后升级 `@node-projects/acad-ts` 至 3.0.2；引入依赖更新机器人并要求 CAD 语义回归测试门禁；记录 `@resvg/resvg-js` 平台与原生包安装要求。
+- [x] 4.8 依赖管理：确认 `@deepseek-ai/dsh-tools` 的 optional peer 依赖是否成立；建立回归测试后升级 `@node-projects/acad-ts` 至 3.0.2；引入依赖更新机器人并要求 CAD 语义回归测试门禁；记录 `@resvg/resvg-js` 平台与原生包安装要求。
 - [x] 4.9 完善 README：配置项/默认值/范围/安全影响、三工具完整调用与返回示例、错误码及恢复、DWG/DXF 版本支持矩阵、预览实体支持矩阵、DWG→DXF 保真限制与警告语义、统计范围、路径与输出策略、性能/超时/资源上限。
 
 ## 阶段五：测试计划（随各阶段同步推进）
