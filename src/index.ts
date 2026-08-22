@@ -258,6 +258,30 @@ function scopeStats(document: CadDocument) {
   return { modelSpace: { entityCount: model.length }, paperSpaces, blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length, referenceCount: references[String(block.name)] ?? 0 })), insertCount: Object.values(references).reduce((sum, count) => sum + count, 0), insertReferences: references, maxNestedDepth, circularReferenceCount, visibility, resources }
 }
 
+function geometryMetrics(document: CadDocument) {
+  let totalLength = 0; let perimeter = 0; let area = 0
+  for (const entity of entities(document)) {
+    const kind = entityName(entity)
+    if (kind === 'Line') { const a = point(entity.startPoint); const b = point(entity.endPoint); if (a && b) totalLength += Math.hypot(b.x - a.x, b.y - a.y) }
+    else if (kind === 'Circle') { const radius = Number(entity.radius ?? 0); if (Number.isFinite(radius)) { totalLength += 2 * Math.PI * radius; area += Math.PI * radius * radius } }
+    else if (['LwPolyline', 'Polyline2D', 'Polyline3D'].includes(kind)) {
+      const points = drawingPoints(entity); let length = 0
+      for (let i = 1; i < points.length; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+      if (entity.isClosed && points.length > 1) { length += Math.hypot(points[0].x - points.at(-1)!.x, points[0].y - points.at(-1)!.y); perimeter += length }
+      totalLength += length
+      if (entity.isClosed && points.length > 2) area += Math.abs(points.reduce((sum, current, i) => { const next = points[(i + 1) % points.length]; return sum + current.x * next.y - next.x * current.y }, 0)) / 2
+    }
+  }
+  return { totalLength, perimeter, area }
+}
+
+function layerUsage(document: CadDocument) {
+  const counts: Record<string, number> = {}
+  for (const entity of entities(document)) counts[entityLayer(entity)] = (counts[entityLayer(entity)] ?? 0) + 1
+  const layers = Array.from(document.layers ?? []).map((layer: any) => ({ name: String(layer.name), entityCount: counts[String(layer.name)] ?? 0, empty: !counts[String(layer.name)] }))
+  return { layers, emptyLayers: layers.filter(layer => layer.empty).map(layer => layer.name) }
+}
+
 async function loadCad(input: string, config: Config, signal?: AbortSignal): Promise<CadResult | ReturnType<typeof error>> {
   if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before reading the drawing.')
   const inputPath = path.resolve(input)
@@ -342,6 +366,8 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     entityCountByLayer: byLayer,
     blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length, nestedBlocks: Array.from(block.entities ?? []).filter((entity: any) => entityName(entity) === 'Insert').map((entity: any) => entity.block?.name).filter(Boolean) })),
     scope: scopeStats(document),
+    geometryMetrics: geometryMetrics(document),
+    layerUsage: layerUsage(document),
     textCount: all.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity))).length,
     warnings: summarizeWarnings(warnings, maxWarningSamples),
   }

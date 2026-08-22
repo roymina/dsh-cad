@@ -124,6 +124,19 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
             proxyEntities: number;
         };
     };
+    geometryMetrics: {
+        totalLength: number;
+        perimeter: number;
+        area: number;
+    };
+    layerUsage: {
+        layers: {
+            name: string;
+            entityCount: number;
+            empty: boolean;
+        }[];
+        emptyLayers: string[];
+    };
     textCount: number;
     warnings: WarningSummary;
 }>;

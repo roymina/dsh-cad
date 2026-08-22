@@ -18,6 +18,8 @@ describe('DWG support', () => {
       expect(result.units).toEqual(expect.objectContaining({ code: expect.any(Number), name: expect.any(String) }))
       expect(result.scope).toEqual(expect.objectContaining({ modelSpace: expect.any(Object), paperSpaces: expect.any(Array), insertCount: expect.any(Number), visibility: expect.any(Object) }))
       expect(result.bounds).toEqual(expect.objectContaining({ header: expect.anything(), actual: expect.anything(), unableTypes: expect.any(Object) }))
+      expect(result.geometryMetrics).toEqual(expect.objectContaining({ totalLength: expect.any(Number), perimeter: expect.any(Number), area: expect.any(Number) }))
+      expect(result.layerUsage).toEqual(expect.objectContaining({ layers: expect.any(Array), emptyLayers: expect.any(Array) }))
     }
   })
 
