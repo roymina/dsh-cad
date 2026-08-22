@@ -27,6 +27,7 @@ describe('DWG support', () => {
       const svg = await exportCad({ path: secondFixture, format: 'svg', outputName: 'second.svg' }, config)
       expect(svg.ok).toBe(true)
       if (svg.ok) {
+        expect(svg.layout).toBe('Model')
         const document = await readFile(svg.outputPath, 'utf8')
         const svgPrimitiveCount = (document.match(/<(?:line|polyline|polygon|circle|path|text)\b/g) ?? []).length
         expect(svg.renderedPrimitiveCount).toBe(svgPrimitiveCount)
@@ -89,5 +90,6 @@ describe('DWG support', () => {
     await expect(exportCad({ path: fixture, format: 'svg', background: 'url(https://example.test)' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'png', width: 0 }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'png', width: 2000, outputName: '../preview' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
+    await expect(exportCad({ path: fixture, format: 'svg', layout: 'missing-layout' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'LAYOUT_NOT_FOUND' } })
   })
 })

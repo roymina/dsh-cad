@@ -130,6 +130,7 @@ export declare function exportCad(args: {
     format: 'svg' | 'png' | 'dxf';
     outputName?: string;
     layers?: string[];
+    layout?: string;
     width?: number;
     height?: number;
     background?: string;
@@ -163,6 +164,7 @@ export declare function exportCad(args: {
     warnings: WarningSummary;
     unpreservedObjectTypes?: undefined;
     bounds?: undefined;
+    layout?: undefined;
     sourceEntityCount?: undefined;
     renderedPrimitiveCount?: undefined;
     unsupportedEntityTypes?: undefined;
@@ -195,6 +197,7 @@ export declare function exportCad(args: {
     unpreservedObjectTypes: string[];
     warnings: WarningSummary;
     bounds?: undefined;
+    layout?: undefined;
     sourceEntityCount?: undefined;
     renderedPrimitiveCount?: undefined;
     unsupportedEntityTypes?: undefined;
@@ -221,6 +224,7 @@ export declare function exportCad(args: {
     warnings: WarningSummary;
     error?: undefined;
     bounds?: undefined;
+    layout?: undefined;
     sourceEntityCount?: undefined;
     renderedPrimitiveCount?: undefined;
     unsupportedEntityTypes?: undefined;
@@ -239,6 +243,7 @@ export declare function exportCad(args: {
             y: number;
         };
     };
+    layout: string;
     sourceEntityCount: number;
     renderedPrimitiveCount: number;
     unsupportedEntityTypes: Record<string, number>;

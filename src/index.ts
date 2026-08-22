@@ -287,6 +287,7 @@ const svgRenderers: Record<string, SvgRenderer> = {
   Leader: renderLeader,
   TextEntity: renderText,
   MText: renderText,
+  AttributeEntity: renderText,
 }
 
 function renderPolyline(entity: CadEntity, color: string) {
@@ -366,8 +367,14 @@ function expandInsert(insert: CadEntity, maxDepth: number, maxInstances: number,
   return expanded
 }
 
-function makeSvg(document: CadDocument, selectedLayers?: string[], background = 'white', maxBlockDepth = 16, maxBlockInstances = 10_000) {
-  const source = entities(document).filter(entity => !entity.isInvisible && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
+function layoutEntities(document: CadDocument, layoutName?: string): CadEntity[] | undefined {
+  if (!layoutName || layoutName.toLowerCase() === 'model') return entities(document)
+  const layout = Array.from(document.layouts ?? []).find((item: any) => String(item.name).toLowerCase() === layoutName.toLowerCase()) as CadEntity | undefined
+  return layout ? Array.from(layout.associatedBlock?.entities ?? []) as CadEntity[] : undefined
+}
+
+function makeSvg(document: CadDocument, selectedLayers?: string[], background = 'white', maxBlockDepth = 16, maxBlockInstances = 10_000, layoutName?: string) {
+  const source = (layoutEntities(document, layoutName) ?? []).filter(entity => !entity.isInvisible && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
   const drawing = source.flatMap(entity => entityName(entity) === 'Insert' ? expandInsert(entity, maxBlockDepth, maxBlockInstances) : [entity])
   const points = drawing.flatMap(drawingPoints)
   const declared = bounds(document)
@@ -441,7 +448,7 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
   }
 }
 
-export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'dxf'; outputName?: string; layers?: string[]; width?: number; height?: number; background?: string }, config: Config, signal?: AbortSignal) {
+export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'dxf'; outputName?: string; layers?: string[]; layout?: string; width?: number; height?: number; background?: string }, config: Config, signal?: AbortSignal) {
   const invalid = invalidPath(args.path)
   if (invalid) return invalid
   if (args.outputName !== undefined && !validOutputName(args.outputName)) return error('INVALID_ARGUMENT', 'outputName must be a non-empty filename without path segments or reserved characters.')
@@ -451,6 +458,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
   if (args.width !== undefined && args.height !== undefined) return error('INVALID_ARGUMENT', 'Specify either width or height for PNG output, not both.')
   const loaded = await loadCad(args.path, config, signal)
   if (isErrorResult(loaded)) return loaded
+  if (args.layout && !layoutEntities(loaded.document, args.layout)) return error('LAYOUT_NOT_FOUND', 'The requested layout does not exist.', { layout: args.layout })
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-preview`, args.format)
     if (args.format === 'dxf') {
@@ -510,7 +518,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
         warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
       }
     }
-    const drawing = makeSvg(loaded.document, args.layers, args.background, config.maxBlockDepth ?? 16, config.maxBlockInstances ?? 10_000)
+    const drawing = makeSvg(loaded.document, args.layers, args.background, config.maxBlockDepth ?? 16, config.maxBlockInstances ?? 10_000, args.layout)
     if (args.format === 'svg') await writeFile(output, drawing.svg, 'utf8')
     else {
       const drawingWidth = drawing.bounds.max.x - drawing.bounds.min.x
@@ -528,7 +536,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
     }
     return {
       ok: true, format: args.format, outputPath: output, bounds: drawing.bounds,
-      sourceEntityCount: drawing.sourceEntityCount, renderedPrimitiveCount: drawing.renderedPrimitiveCount,
+      layout: args.layout ?? 'Model', sourceEntityCount: drawing.sourceEntityCount, renderedPrimitiveCount: drawing.renderedPrimitiveCount,
       unsupportedEntityTypes: drawing.unsupportedEntityTypes, previewCompleteness: drawing.previewCompleteness,
       warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
     }
@@ -558,7 +566,7 @@ export function apply(ctx: Context, config: Config) {
     parameters: {
       path: { type: 'string', required: true, description: 'Absolute or working-directory-relative DWG/DXF path.' },
       format: { type: 'string', required: true, enum: ['svg', 'png', 'dxf'], description: 'Export format.' }, outputName: { type: 'string', description: 'Output filename only; directories are not allowed.' },
-      layers: { type: 'array', items: { type: 'string' }, description: 'Optional layer-name filter for SVG/PNG.' }, width: { type: 'integer', description: 'PNG width in pixels; must be at least 1 and within the configured maximum.' }, height: { type: 'integer', description: 'Alternative PNG height in pixels; must be at least 1, within the configured maximum, and cannot be combined with width.' }, background: { type: 'string', description: 'SVG/PNG background: transparent, a supported named color, or #RGB/#RRGGBB/#RRGGBBAA.' },
+      layers: { type: 'array', items: { type: 'string' }, description: 'Optional layer-name filter for SVG/PNG.' }, layout: { type: 'string', description: 'Model (default) or a Paper Space layout name for SVG/PNG.' }, width: { type: 'integer', description: 'PNG width in pixels; must be at least 1 and within the configured maximum.' }, height: { type: 'integer', description: 'Alternative PNG height in pixels; must be at least 1, within the configured maximum, and cannot be combined with width.' }, background: { type: 'string', description: 'SVG/PNG background: transparent, a supported named color, or #RGB/#RRGGBB/#RRGGBBAA.' },
     }, output: jsonOutput,
     async execute(args, exec) { return exportCad(args as any, config, exec.signal) as any },
   }))
