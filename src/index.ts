@@ -264,6 +264,12 @@ function drawingPoints(entity: CadEntity): Array<{ x: number; y: number }> {
   return location ? [location] : []
 }
 
+function renderedBoundsPoints(entity: CadEntity): Array<{ x: number; y: number }> {
+  const boundingBox = entity.getBoundingBox?.()
+  const bounds = [point(boundingBox?.min), point(boundingBox?.max)].filter(Boolean) as Array<{ x: number; y: number }>
+  return bounds.length === 2 ? bounds : drawingPoints(entity)
+}
+
 type SvgRenderer = (entity: CadEntity, color: string) => string
 
 const svgRenderers: Record<string, SvgRenderer> = {
@@ -426,12 +432,12 @@ function layoutEntities(document: CadDocument, layoutName?: string): CadEntity[]
 function makeSvg(document: CadDocument, selectedLayers?: string[], background = 'white', maxBlockDepth = 16, maxBlockInstances = 10_000, layoutName?: string) {
   const source = (layoutEntities(document, layoutName) ?? []).filter(entity => isVisibleInPreview(entity) && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
   const drawing = source.flatMap(entity => entityName(entity) === 'Insert' ? expandInsert(entity, maxBlockDepth, maxBlockInstances) : [entity]).filter(isVisibleInPreview)
-  const points = drawing.flatMap(drawingPoints)
+  const points = drawing.filter(entity => svgRenderers[entityName(entity)]).flatMap(renderedBoundsPoints)
   const declared = bounds(document)
-  const minX = declared?.min.x ?? Math.min(...points.map(p => p.x), 0)
-  const minY = declared?.min.y ?? Math.min(...points.map(p => p.y), 0)
-  const maxX = declared?.max.x ?? Math.max(...points.map(p => p.x), 100)
-  const maxY = declared?.max.y ?? Math.max(...points.map(p => p.y), 100)
+  const minX = points.length ? Math.min(...points.map(point => point.x)) : declared?.min.x ?? 0
+  const minY = points.length ? Math.min(...points.map(point => point.y)) : declared?.min.y ?? 0
+  const maxX = points.length ? Math.max(...points.map(point => point.x)) : declared?.max.x ?? 100
+  const maxY = points.length ? Math.max(...points.map(point => point.y)) : declared?.max.y ?? 100
   const width = Math.max(maxX - minX, 1)
   const height = Math.max(maxY - minY, 1)
   const unsupportedEntityTypes: Record<string, number> = {}
@@ -446,7 +452,7 @@ function makeSvg(document: CadDocument, selectedLayers?: string[], background = 
   const content = primitives.join('')
   const bg = background === 'transparent' ? '' : `<rect x="${minX}" y="${-maxY}" width="${width}" height="${height}" fill="${background}"/>`
   return {
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${-maxY} ${width} ${height}">${bg}<g stroke-width="${Math.max(width, height) / 2500}">${content}</g></svg>`,
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${-maxY} ${width} ${height}">${bg}<g stroke-width="${Math.min(Math.max(width, height) / 2500, 100)}">${content}</g></svg>`,
     bounds: { min: { x: minX, y: minY }, max: { x: maxX, y: maxY } },
     sourceEntityCount: drawing.length,
     renderedPrimitiveCount: primitives.length,
