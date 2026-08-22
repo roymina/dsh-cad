@@ -53,17 +53,75 @@ export const Config: Schema<Config> = Schema.object({
   maxEntityVertices: Schema.number().default(500_000),
 })
 
-type CadEntity = AcadEntity & Record<string, any>
-type CadDocument = AcadCadDocument & Record<string, any>
+type PointLike = { x: number; y: number; z?: number }
+type CadVertex = PointLike & { location?: PointLike; bulge?: number }
+type CadLayer = { name: string; isOn: boolean; layerFlags: number; plotFlag: boolean; color?: { index: number } }
+type CadBlock = { name: string; entities: Iterable<CadEntity>; source?: CadBlock | null; xrefFile?: string; isXRef?: boolean }
+type CadBoundary = { getPoints?: (resolution: number) => unknown[] }
+type CadEntity = AcadEntity & {
+  objectName: string
+  name?: string
+  tag?: string
+  isOn?: boolean
+  layerFlags: number
+  color?: { index?: number; getRgb?: () => number[] }
+  entities?: Iterable<CadEntity>
+  layer?: CadLayer
+  block?: CadBlock | null
+  vertices?: CadVertex[]
+  bulge?: number
+  attributes?: CadEntity[]
+  startPoint?: PointLike
+  endPoint?: PointLike
+  center?: PointLike
+  location?: PointLike
+  insertPoint?: PointLike
+  alignmentPoint?: PointLike
+  firstCorner?: PointLike
+  secondCorner?: PointLike
+  thirdCorner?: PointLike
+  fourthCorner?: PointLike
+  value?: string
+  plainText?: string
+  height?: number
+  radius?: number
+  rotation?: number
+  widthFactor?: number
+  xScale?: number
+  yScale?: number
+  zScale?: number
+  rowCount?: number
+  columnCount?: number
+  rowSpacing?: number
+  columnSpacing?: number
+  isClosed?: boolean
+  isSolid?: boolean
+  attachmentPoint?: number
+  horizontalAlignment?: number
+  verticalAlignment?: number
+  style?: { filename?: string }
+  paths?: CadBoundary[]
+  getPoints?: (resolution: number) => unknown[]
+  polygonalVertexes?: (resolution: number) => unknown[]
+  tryPolygonalVertexes?: (resolution: number) => { points: unknown[] }
+  getActiveColor?: () => { getRgb?: () => number[] }
+  getActiveLineType?: () => { segments?: Array<{ length: number }> }
+  clone?: () => CadEntity
+  explode?: () => Iterable<CadEntity>
+}
+type CadDocument = AcadCadDocument
 type Warning = { code: string; message: string }
 type WarningSummary = { total: number; byCode: Record<string, number>; samples: Warning[]; truncated: boolean }
-type CadResult = { document: CadDocument; inputPath: string; format: 'dwg' | 'dxf'; warnings: Warning[] }
-type ErrorResult = { ok: false; error: { code: string; message: string; details?: Record<string, JsonValue> } }
+type LoadedCadResult = { document: CadDocument; inputPath: string; format: 'dwg' | 'dxf'; warnings: Warning[] }
+export type CadError = { ok: false; error: { code: string; message: string; details?: Record<string, JsonValue> } }
+export type CadSuccess<T extends object> = { ok: true } & T
+export type CadResponse<T extends object> = CadSuccess<T> | CadError
+type ErrorResult = CadError
 type SemanticSnapshot = { texts: string[]; entityTypes: Record<string, number>; layers: string[] }
 
 let activeJobs = 0
 const queuedJobs: Array<() => void> = []
-const cadCache = new Map<string, CadResult>()
+const cadCache = new Map<string, LoadedCadResult>()
 const maxCadCacheEntries = 4
 
 async function acquireJob(maxConcurrent: number, signal?: AbortSignal) {
@@ -85,6 +143,10 @@ const asJson = (value: unknown): JsonValue => value as JsonValue
 
 function error(code: string, message: string, details?: Record<string, JsonValue>): ErrorResult {
   return { ok: false, error: { code, message, ...(details ? { details } : {}) } }
+}
+
+function success<T extends object>(value: T): CadSuccess<T> {
+  return { ok: true, ...value }
 }
 
 function causeCode(cause: unknown) {
@@ -128,7 +190,7 @@ function invalidPath(pathValue: string) {
   return !validPath(pathValue) ? error('INVALID_ARGUMENT', 'path must be a non-empty string.') : undefined
 }
 
-function isErrorResult(value: CadResult | ErrorResult): value is ErrorResult {
+function isErrorResult(value: LoadedCadResult | ErrorResult): value is ErrorResult {
   return 'ok' in value && value.ok === false
 }
 
@@ -164,8 +226,8 @@ function entities(document: CadDocument): CadEntity[] {
   return Array.from(document.entities ?? []) as CadEntity[]
 }
 
-function blocks(document: CadDocument): CadEntity[] {
-  return Array.from(document.blockRecords ?? []) as unknown as CadEntity[]
+function blocks(document: CadDocument): CadBlock[] {
+  return Array.from(document.blockRecords ?? []) as unknown as CadBlock[]
 }
 
 const unitNames: Record<number, string> = { 0: 'Unitless', 1: 'Inches', 2: 'Feet', 3: 'Miles', 4: 'Millimeters', 5: 'Centimeters', 6: 'Meters', 7: 'Kilometers', 8: 'Microinches', 9: 'Mils', 10: 'Yards', 11: 'Angstroms', 12: 'Nanometers', 13: 'Microns', 14: 'Decimeters', 15: 'Decameters', 16: 'Hectometers', 17: 'Gigameters', 18: 'AstronomicalUnits', 19: 'LightYears', 20: 'Parsecs', 21: 'USSurveyFeet', 22: 'USSurveyInches', 23: 'USSurveyYards' }
@@ -343,7 +405,7 @@ function qualityChecks(document: CadDocument) {
   return { duplicateHandles, zeroLengthLines, invalidRadii, openPolylines, closedContours }
 }
 
-async function loadCad(input: string, config: Config, signal?: AbortSignal): Promise<CadResult | ReturnType<typeof error>> {
+async function loadCad(input: string, config: Config, signal?: AbortSignal): Promise<LoadedCadResult | ReturnType<typeof error>> {
   if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before reading the drawing.')
   const inputPath = path.resolve(input)
   const roots = config.allowedInputRoots?.map(root => path.resolve(root))
@@ -388,7 +450,7 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
     const limited = resourceLimitError(document, config)
     if (limited) return limited
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after parsing the drawing.')
-    const result: CadResult = { document, inputPath, format: format as 'dwg' | 'dxf', warnings }
+    const result: LoadedCadResult = { document, inputPath, format: format as 'dwg' | 'dxf', warnings }
     cadCache.set(cacheKey, result)
     while (cadCache.size > maxCadCacheEntries) cadCache.delete(cadCache.keys().next().value as string)
     return result
@@ -406,8 +468,7 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     byType[entityName(entity)] = (byType[entityName(entity)] ?? 0) + 1
     byLayer[entityLayer(entity)] = (byLayer[entityLayer(entity)] ?? 0) + 1
   }
-  return {
-    ok: true,
+  return success({
     inputPath,
     format,
     version: versionInfo(document.header?.version),
@@ -425,7 +486,7 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     qualityChecks: qualityChecks(document),
     textCount: all.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity))).length,
     warnings: summarizeWarnings(warnings, maxWarningSamples),
-  }
+  })
 }
 
 function entityRecord(entity: CadEntity) {
@@ -437,9 +498,9 @@ function entityRecord(entity: CadEntity) {
   if (kind === 'Line') return { ...base, start: point(entity.startPoint), end: point(entity.endPoint) }
   if (kind === 'Circle') return { ...base, center: point(entity.center), radius: entity.radius ?? null }
   if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') {
-    return { ...base, vertices: Array.from(entity.vertices ?? []).map(vertex => point((vertex as CadEntity).location ?? vertex)).filter(Boolean), closed: Boolean(entity.isClosed) }
+    return { ...base, vertices: Array.from(entity.vertices ?? []).map(vertex => point(vertex.location ?? vertex)).filter(Boolean), closed: Boolean(entity.isClosed) }
   }
-  if (kind === 'Insert') return { ...base, block: entity.block?.name ?? null, position: point(entity.insertPoint), rotation: entity.rotation ?? 0, scale: { x: entity.xScale ?? 1, y: entity.yScale ?? 1, z: entity.zScale ?? 1 }, attributes: Array.from(entity.attributes ?? []).map(attribute => ({ tag: (attribute as CadEntity).tag, text: (attribute as CadEntity).value, position: point((attribute as CadEntity).insertPoint) })) }
+  if (kind === 'Insert') return { ...base, block: entity.block?.name ?? null, position: point(entity.insertPoint), rotation: entity.rotation ?? 0, scale: { x: entity.xScale ?? 1, y: entity.yScale ?? 1, z: entity.zScale ?? 1 }, attributes: Array.from(entity.attributes ?? []).map(attribute => ({ tag: attribute.tag, text: attribute.value, position: point(attribute.insertPoint) })) }
   return base
 }
 
@@ -465,7 +526,7 @@ function extract(document: CadDocument, section: string, layers: string[] | unde
     ? { name: item.name, isOn: item.isOn !== false, isFrozen: (item.layerFlags & LayerFlags.Frozen) !== 0, colorIndex: item.color?.index ?? null }
     : section === 'blocks' ? { name: item.name, entityCount: Array.from(item.entities ?? []).length }
     : entityRecord(item))
-  return { ok: true, section, offset, total: source.length, returned: records.length, truncated: offset + records.length < source.length, records }
+  return success({ section, offset, total: source.length, returned: records.length, truncated: offset + records.length < source.length, records })
 }
 
 function escapeXml(value: string) {
@@ -475,7 +536,7 @@ function escapeXml(value: string) {
 function drawingPoints(entity: CadEntity): Array<{ x: number; y: number }> {
   const kind = entityName(entity)
   if (kind === 'Line') return [point(entity.startPoint), point(entity.endPoint)].filter(Boolean) as Array<{ x: number; y: number }>
-  if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') return Array.from(entity.vertices ?? []).map(v => point((v as CadEntity).location ?? v)).filter(Boolean) as Array<{ x: number; y: number }>
+  if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') return Array.from(entity.vertices ?? []).map(v => point(v.location ?? v)).filter(Boolean) as Array<{ x: number; y: number }>
   if (kind === 'Circle') {
     const center = point(entity.center); const radius = Number(entity.radius ?? 0)
     return center && Number.isFinite(radius) ? [{ x: center.x - radius, y: center.y - radius }, { x: center.x + radius, y: center.y + radius }] : []
@@ -517,7 +578,7 @@ const svgRenderers: Record<string, SvgRenderer> = {
 }
 
 function renderPolyline(entity: CadEntity, color: string) {
-  const vertices = Array.from(entity.vertices ?? []) as CadEntity[]
+  const vertices = Array.from(entity.vertices ?? [])
   const points = vertices.map(vertex => point(vertex.location ?? vertex)).filter(Boolean) as Array<{ x: number; y: number }>
   if (points.length < 2) return ''
   let path = `M ${points[0].x} ${-points[0].y}`
@@ -571,7 +632,7 @@ function renderCurve(entity: CadEntity, color: string) {
 }
 
 function renderHatch(entity: CadEntity, color: string) {
-  const path = (entity.paths ?? []).map((boundary: CadEntity) => svgPath(boundary.getPoints?.(96) ?? [], true)).filter(Boolean).join(' ')
+  const path = (entity.paths ?? []).map(boundary => svgPath(boundary.getPoints?.(96) ?? [], true)).filter(Boolean).join(' ')
   return path ? `<path d="${path}" fill="${entity.isSolid ? color : 'none'}" fill-rule="evenodd" stroke="${color}"/>` : ''
 }
 
@@ -608,17 +669,17 @@ function svgDashArray(entity: CadEntity) {
   return values.length ? values.join(' ') : undefined
 }
 
-function hasCircularBlockReference(block: CadEntity, blockStack = new Set<string>()): boolean {
+function hasCircularBlockReference(block: CadBlock, blockStack = new Set<string>()): boolean {
   const blockName = String(block?.name ?? '')
   if (!blockName || blockStack.has(blockName)) return true
   const nextStack = new Set(blockStack).add(blockName)
   const childEntities = Array.from(block.entities ?? []) as CadEntity[]
-  return childEntities.some(entity => entityName(entity) === 'Insert' && hasCircularBlockReference(entity.block, nextStack))
+  return childEntities.some(entity => entityName(entity) === 'Insert' && entity.block ? hasCircularBlockReference(entity.block, nextStack) : false)
 }
 
 function expandInsert(insert: CadEntity, maxDepth: number, maxInstances: number, depth = 0, blockStack = new Set<string>()): CadEntity[] {
   const blockName = String(insert.block?.name ?? '')
-  if (!blockName || depth >= maxDepth || blockStack.has(blockName) || hasCircularBlockReference(insert.block)) return []
+  if (!blockName || !insert.block || depth >= maxDepth || blockStack.has(blockName) || hasCircularBlockReference(insert.block)) return []
   const nextStack = new Set(blockStack).add(blockName)
   const rows = Math.max(1, Number(insert.rowCount ?? 1))
   const columns = Math.max(1, Number(insert.columnCount ?? 1))
@@ -632,6 +693,7 @@ function expandInsert(insert: CadEntity, maxDepth: number, maxInstances: number,
     const localX = column * Number(instance.columnSpacing ?? 0) * Number(instance.xScale ?? 1)
     const localY = row * Number(instance.rowSpacing ?? 0) * Number(instance.yScale ?? 1)
     const insertPoint = instance.insertPoint
+    if (!insertPoint || !instance.explode) return expanded
     insertPoint.x += localX * Math.cos(rotation) - localY * Math.sin(rotation)
     insertPoint.y += localX * Math.sin(rotation) + localY * Math.cos(rotation)
     for (const entity of instance.explode() as Iterable<CadEntity>) {
@@ -723,7 +785,7 @@ export async function compareCad(firstPath: string, secondPath: string, config: 
   if (isErrorResult(first)) return first
   if (isErrorResult(second)) return second
   const left = semanticSnapshot(first.document); const right = semanticSnapshot(second.document)
-  return { ok: true, firstPath: first.inputPath, secondPath: second.inputPath, equal: JSON.stringify(left) === JSON.stringify(right), differences: { texts: left.texts.length !== right.texts.length || JSON.stringify(left.texts) !== JSON.stringify(right.texts), entityTypes: !equalRecords(left.entityTypes, right.entityTypes), layers: JSON.stringify(left.layers) !== JSON.stringify(right.layers) } }
+  return success({ firstPath: first.inputPath, secondPath: second.inputPath, equal: JSON.stringify(left) === JSON.stringify(right), differences: { texts: left.texts.length !== right.texts.length || JSON.stringify(left.texts) !== JSON.stringify(right.texts), entityTypes: !equalRecords(left.entityTypes, right.entityTypes), layers: JSON.stringify(left.layers) !== JSON.stringify(right.layers) } })
 }
 
 export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; offset?: number; search?: string; handle?: string; window?: { minX: number; minY: number; maxX: number; maxY: number }; nearest?: { x: number; y: number }; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean; summary?: boolean }, config: Config, signal?: AbortSignal) {
@@ -735,7 +797,7 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
   const loaded = await loadCad(args.path, config, signal)
   if (isErrorResult(loaded)) return loaded
   const result = extract(loaded.document, args.section, args.layers, args.entityTypes, Math.min(args.limit ?? config.maxExtractItems, config.maxExtractItems), args.offset ?? 0, args.search, args.handle, args.window, args.nearest)
-  if (args.summary) return { ok: true, section: result.section, total: result.total, offset: result.offset, returned: result.returned, truncated: result.truncated }
+  if (args.summary) return success({ section: result.section, total: result.total, offset: result.offset, returned: result.returned, truncated: result.truncated })
   if (!args.saveAs) return result
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-${args.section}`, args.saveAs)
@@ -814,11 +876,10 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
           warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
         }
       }
-      return {
-        ok: true, format: 'dxf', outputPath: output, ...(await outputMetadata(output)), conversionValidation, lossRisk,
+      return success({ format: 'dxf', outputPath: output, ...(await outputMetadata(output)), conversionValidation, lossRisk,
         unpreservedObjectTypes: conversionValidation.unpreservedObjectTypes,
         warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
-      }
+      })
     }
     const drawing = makeSvg(loaded.document, args.layers, args.background, config.maxBlockDepth ?? 16, config.maxBlockInstances ?? 10_000, args.layout)
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before rendering.')
@@ -852,13 +913,12 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after rendering.')
       await writeFile(output, png, { flag: 'wx' })
     }
-    return {
-      ok: true, format: args.format, outputPath: output, bounds: drawing.bounds,
+    return success({ format: args.format, outputPath: output, bounds: drawing.bounds,
       layout: args.layout ?? 'Model', sourceEntityCount: drawing.sourceEntityCount, expandedEntityCount: drawing.expandedEntityCount, ...outputDimensions, ...(await outputMetadata(output)),
       renderedPrimitiveCount: drawing.renderedPrimitiveCount, skippedEntityCount: drawing.skippedEntityCount,
       unsupportedEntityTypes: drawing.unsupportedEntityTypes, previewCompleteness: drawing.previewCompleteness,
       warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
-    }
+    })
   } catch (cause: unknown) {
     return error(causeCode(cause) === 'EEXIST' ? 'OUTPUT_EXISTS' : 'EXPORT_FAILED', cause instanceof Error ? cause.message : String(cause))
   }

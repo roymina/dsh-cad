@@ -32,7 +32,7 @@ type WarningSummary = {
     samples: Warning[];
     truncated: boolean;
 };
-type ErrorResult = {
+export type CadError = {
     ok: false;
     error: {
         code: string;
@@ -40,8 +40,11 @@ type ErrorResult = {
         details?: Record<string, JsonValue>;
     };
 };
-export declare function inspectCad(pathValue: string, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
-    ok: boolean;
+export type CadSuccess<T extends object> = {
+    ok: true;
+} & T;
+export type CadResponse<T extends object> = CadSuccess<T> | CadError;
+export declare function inspectCad(pathValue: string, config: Config, signal?: AbortSignal): Promise<CadError | CadSuccess<{
     inputPath: string;
     format: string;
     version: {
@@ -101,9 +104,9 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
     }[];
     entityCountByLayer: Record<string, number>;
     blocks: {
-        name: any;
+        name: string;
         entityCount: number;
-        nestedBlocks: any[];
+        nestedBlocks: (string | undefined)[];
     }[];
     scope: {
         modelSpace: {
@@ -114,7 +117,7 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
             entityCount: number;
         }[];
         blocks: {
-            name: any;
+            name: string;
             entityCount: number;
             referenceCount: number;
         }[];
@@ -158,9 +161,8 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
     };
     textCount: number;
     warnings: WarningSummary;
-}>;
-export declare function compareCad(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
-    ok: boolean;
+}>>;
+export declare function compareCad(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal): Promise<CadError | CadSuccess<{
     firstPath: string;
     secondPath: string;
     equal: boolean;
@@ -169,7 +171,7 @@ export declare function compareCad(firstPath: string, secondPath: string, config
         entityTypes: boolean;
         layers: boolean;
     };
-}>;
+}>>;
 export declare function extractCad(args: {
     path: string;
     section: 'texts' | 'layers' | 'blocks' | 'entities';
@@ -193,44 +195,18 @@ export declare function extractCad(args: {
     outputName?: string;
     bom?: boolean;
     summary?: boolean;
-}, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
-    ok: boolean;
-    section: string;
-    offset: number;
-    total: number;
-    returned: number;
-    truncated: boolean;
-    records: ({
-        handle: string | null;
-        type: string;
-        layer: string;
-        invisible: boolean;
-    } | {
-        name: any;
-        isOn: boolean;
-        isFrozen: boolean;
-        colorIndex: number;
-        entityCount?: undefined;
-    } | {
-        name: any;
-        entityCount: number;
-        isOn?: undefined;
-        isFrozen?: undefined;
-        colorIndex?: undefined;
-    })[];
-} | {
-    ok: boolean;
+}, config: Config, signal?: AbortSignal): Promise<CadError | CadSuccess<{
     section: string;
     total: number;
     offset: number;
     returned: number;
     truncated: boolean;
-} | {
+}> | {
     bytes: number;
     outputBytes: number;
     sha256: string;
     outputPath: string;
-    ok: boolean;
+    ok: true;
     section: string;
     offset: number;
     total: number;
@@ -242,13 +218,13 @@ export declare function extractCad(args: {
         layer: string;
         invisible: boolean;
     } | {
-        name: any;
+        name: string | undefined;
         isOn: boolean;
         isFrozen: boolean;
         colorIndex: number;
         entityCount?: undefined;
     } | {
-        name: any;
+        name: string | undefined;
         entityCount: number;
         isOn?: undefined;
         isFrozen?: undefined;
@@ -264,7 +240,55 @@ export declare function exportCad(args: {
     width?: number;
     height?: number;
     background?: string;
-}, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
+}, config: Config, signal?: AbortSignal): Promise<CadError | CadSuccess<{
+    conversionValidation: {
+        status: "passed" | "failed";
+        checks: {
+            textValuesMatch: boolean;
+            entityTypesMatch: boolean;
+            layersMatch: boolean;
+        };
+        differences: string[];
+        unpreservedObjectTypes: string[];
+    };
+    lossRisk: {
+        level: "none" | "severe" | "warning";
+        reasons: string[];
+    };
+    unpreservedObjectTypes: string[];
+    warnings: WarningSummary;
+    bytes: number;
+    outputBytes: number;
+    sha256: string;
+    format: string;
+    outputPath: string;
+}> | CadSuccess<{
+    renderedPrimitiveCount: number;
+    skippedEntityCount: number;
+    unsupportedEntityTypes: Record<string, number>;
+    previewCompleteness: number;
+    warnings: WarningSummary;
+    bytes: number;
+    outputBytes: number;
+    sha256: string;
+    imageWidth: number;
+    imageHeight: number;
+    format: "svg" | "png";
+    outputPath: string;
+    bounds: {
+        min: {
+            x: number;
+            y: number;
+        };
+        max: {
+            x: number;
+            y: number;
+        };
+    };
+    layout: string;
+    sourceEntityCount: number;
+    expandedEntityCount: number;
+}> | {
     ok: boolean;
     error: {
         code: string;
@@ -322,60 +346,6 @@ export declare function exportCad(args: {
     };
     format: string;
     outputPath: string;
-} | {
-    conversionValidation: {
-        status: "passed" | "failed";
-        checks: {
-            textValuesMatch: boolean;
-            entityTypesMatch: boolean;
-            layersMatch: boolean;
-        };
-        differences: string[];
-        unpreservedObjectTypes: string[];
-    };
-    lossRisk: {
-        level: "none" | "severe" | "warning";
-        reasons: string[];
-    };
-    unpreservedObjectTypes: string[];
-    warnings: WarningSummary;
-    bytes: number;
-    outputBytes: number;
-    sha256: string;
-    ok: boolean;
-    format: string;
-    outputPath: string;
-    error?: undefined;
-} | {
-    renderedPrimitiveCount: number;
-    skippedEntityCount: number;
-    unsupportedEntityTypes: Record<string, number>;
-    previewCompleteness: number;
-    warnings: WarningSummary;
-    bytes: number;
-    outputBytes: number;
-    sha256: string;
-    imageWidth: number;
-    imageHeight: number;
-    ok: boolean;
-    format: "svg" | "png";
-    outputPath: string;
-    bounds: {
-        min: {
-            x: number;
-            y: number;
-        };
-        max: {
-            x: number;
-            y: number;
-        };
-    };
-    layout: string;
-    sourceEntityCount: number;
-    expandedEntityCount: number;
-    error?: undefined;
-    conversionValidation?: undefined;
-    lossRisk?: undefined;
 }>;
 export declare function apply(ctx: Context, config: Config): void;
 export {};
