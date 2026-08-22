@@ -8,7 +8,7 @@
 - [x] 1.1 修复 DXF 中文编码（P0）：改用 `@node-projects/acad-ts` 字节输出接口，使实际编码与 `$DWGCODEPAGE` 一致；或将输出升级为支持 Unicode 的 DXF 版本并同步修改 Header。
 - [x] 1.2 转换后重新打开输出文件执行语义校验；返回 `conversionValidation`、`lossRisk` 与无法保真的对象类型；存在严重警告时不得仅返回笼统的 `ok: true`。
 - [x] 1.3 避免把完整 DXF 先积累为字符串数组再 `join`，降低峰值内存占用。
-- [ ] 1.4 修复图层 Frozen 判断（P1）：改用 `layerFlags & LayerFlags.Frozen`，不再使用不存在的 `isFrozen` 属性。
+- [x] 1.4 修复图层 Frozen 判断（P1）：改用 `layerFlags & LayerFlags.Frozen`，不再使用不存在的 `isFrozen` 属性。
 - [ ] 1.5 修复预览统计语义（P0）：`renderedPrimitiveCount` 与实际 SVG 图元一致；新增 `renderedPrimitiveCount` / `unsupportedEntityTypes` / `previewCompleteness`，不再把筛选后实体数当作已渲染数。
 - [ ] 1.6 增加参数运行时约束：`limit >= 0`（拒绝负数导致的 `slice(0, -n)`）、PNG width/height/总像素范围、非空路径、合法背景色、非空且合法的输出文件名。
 - [ ] 1.7 限制警告（按类型去重、分类、限制明细数量，如返回前 50 条 + 总数 + 类型统计）与模型响应大小。

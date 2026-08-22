@@ -20,6 +20,7 @@ describe('DWG support', () => {
     try {
       const inspected = await inspectCad(secondFixture, config)
       expect(inspected.ok).toBe(true)
+      if (inspected.ok) expect(inspected.layers.some(layer => layer.isFrozen)).toBe(true)
       const dxf = await exportCad({ path: secondFixture, format: 'dxf', outputName: 'second.dxf' }, config)
       expect(dxf.ok).toBe(true)
       if (dxf.ok) expect((await readFile(dxf.outputPath, 'utf8')).includes('SECTION')).toBe(true)
