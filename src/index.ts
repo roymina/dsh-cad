@@ -5,7 +5,8 @@ import path from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { ACadVersion, DwgReader, DxfReader, DxfWriter, LayerFlags } from '@node-projects/acad-ts'
+import { ACadVersion, CadUtils, DwgReader, DxfReader, DxfWriter, LayerFlags } from '@node-projects/acad-ts'
+import type { CadDocument as AcadCadDocument, Entity as AcadEntity } from '@node-projects/acad-ts'
 import { Resvg } from '@resvg/resvg-js'
 
 export const name = 'dsh-cad-plugin'
@@ -35,8 +36,8 @@ export const Config: Schema<Config> = Schema.object({
   maxBlockInstances: Schema.number().default(10_000),
 })
 
-type CadEntity = Record<string, any>
-type CadDocument = Record<string, any>
+type CadEntity = AcadEntity & Record<string, any>
+type CadDocument = AcadCadDocument & Record<string, any>
 type Warning = { code: string; message: string }
 type WarningSummary = { total: number; byCode: Record<string, number>; samples: Warning[]; truncated: boolean }
 type CadResult = { document: CadDocument; inputPath: string; format: 'dwg' | 'dxf'; warnings: Warning[] }
@@ -84,11 +85,12 @@ function summarizeWarnings(warnings: Warning[], maxSamples = 50): WarningSummary
 }
 
 function entityName(entity: CadEntity) {
-  return entity?.constructor?.name ?? 'UnknownEntity'
+  const objectName = entity?.objectName ?? 'UNKNOWN'
+  return ({ LINE: 'Line', CIRCLE: 'Circle', ARC: 'Arc', ELLIPSE: 'Ellipse', SPLINE: 'Spline', HATCH: 'Hatch', INSERT: 'Insert', POINT: 'Point', SOLID: 'Solid', LEADER: 'Leader', TEXT: 'TextEntity', MTEXT: 'MText', ATTRIB: 'AttributeEntity', LWPOLYLINE: 'LwPolyline', POLYLINE: 'Polyline2D', POLYLINE3D: 'Polyline3D' } as Record<string, string>)[objectName] ?? objectName
 }
 
 function entityLayer(entity: CadEntity) {
-  return entity?.layer?.name ?? entity?._layer?.name ?? '0'
+  return entity.layer?.name ?? '0'
 }
 
 function point(value: any) {
@@ -102,7 +104,21 @@ function entities(document: CadDocument): CadEntity[] {
 }
 
 function blocks(document: CadDocument): CadEntity[] {
-  return Array.from(document.blockRecords ?? []) as CadEntity[]
+  return Array.from(document.blockRecords ?? []) as unknown as CadEntity[]
+}
+
+const unitNames: Record<number, string> = { 0: 'Unitless', 1: 'Inches', 2: 'Feet', 3: 'Miles', 4: 'Millimeters', 5: 'Centimeters', 6: 'Meters', 7: 'Kilometers', 8: 'Microinches', 9: 'Mils', 10: 'Yards', 11: 'Angstroms', 12: 'Nanometers', 13: 'Microns', 14: 'Decimeters', 15: 'Decameters', 16: 'Hectometers', 17: 'Gigameters', 18: 'AstronomicalUnits', 19: 'LightYears', 20: 'Parsecs', 21: 'USSurveyFeet', 22: 'USSurveyInches', 23: 'USSurveyYards' }
+
+function versionInfo(value: number | undefined) {
+  const code = Number(value ?? ACadVersion.Unknown)
+  const name = CadUtils.getNameFromVersion(code as ACadVersion)
+  const productRange: Record<string, string> = { AC1014: 'Release 14', AC1015: 'AutoCAD 2000-2002', AC1018: 'AutoCAD 2004-2006', AC1021: 'AutoCAD 2007-2009', AC1024: 'AutoCAD 2010-2012', AC1027: 'AutoCAD 2013-2017', AC1032: 'AutoCAD 2018-2020' }
+  return { code, name, productRange: productRange[name] ?? 'Unknown' }
+}
+
+function unitsInfo(value: number | undefined) {
+  const code = Number(value ?? 0)
+  return { code, name: unitNames[code] ?? 'Unknown' }
 }
 
 function semanticSnapshot(document: CadDocument): SemanticSnapshot {
@@ -111,7 +127,7 @@ function semanticSnapshot(document: CadDocument): SemanticSnapshot {
   for (const entity of entities(document)) {
     const kind = entityName(entity)
     entityTypes[kind] = (entityTypes[kind] ?? 0) + 1
-    if (['TextEntity', 'MText', 'AttributeEntity'].includes(kind)) textValues.push(String(entity.value ?? entity._value ?? ''))
+    if (['TextEntity', 'MText', 'AttributeEntity'].includes(kind)) textValues.push(String(entity.value ?? ''))
   }
   return {
     texts: textValues,
@@ -148,7 +164,7 @@ function layerRows(document: CadDocument) {
     name: layer.name,
     isOn: layer.isOn !== false,
     isFrozen: (layer.layerFlags & LayerFlags.Frozen) !== 0,
-    colorIndex: layer.color?._color ?? layer._color?._color ?? null,
+    colorIndex: layer.color?.index ?? null,
   }))
 }
 
@@ -205,9 +221,9 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     ok: true,
     inputPath,
     format,
-    version: document.header?.version ?? null,
+    version: versionInfo(document.header?.version),
     codePage: document.header?.codePage ?? null,
-    units: document.header?.insUnits ?? null,
+    units: unitsInfo(document.header?.insUnits),
     bounds: bounds(document),
     entityCount: all.length,
     entityTypes: byType,
@@ -221,12 +237,12 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
 
 function entityRecord(entity: CadEntity) {
   const kind = entityName(entity)
-  const base = { handle: entity.handle ?? null, type: kind, layer: entityLayer(entity), invisible: Boolean(entity.isInvisible) }
+  const base = { handle: entity.handle == null ? null : `0x${Number(entity.handle).toString(16).toUpperCase()}`, type: kind, layer: entityLayer(entity), invisible: Boolean(entity.isInvisible) }
   if (kind === 'TextEntity' || kind === 'MText' || kind === 'AttributeEntity') {
-    return { ...base, text: entity.value ?? entity._value ?? entity.text ?? '', position: point(entity.insertPoint ?? entity.location), height: entity.height ?? entity._height ?? null, rotation: entity.rotation ?? 0 }
+    return { ...base, text: entity.value ?? '', position: point(entity.insertPoint ?? entity.location), height: entity.height ?? null, rotation: entity.rotation ?? 0 }
   }
   if (kind === 'Line') return { ...base, start: point(entity.startPoint), end: point(entity.endPoint) }
-  if (kind === 'Circle') return { ...base, center: point(entity.center), radius: entity.radius ?? entity._radius ?? null }
+  if (kind === 'Circle') return { ...base, center: point(entity.center), radius: entity.radius ?? null }
   if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') {
     return { ...base, vertices: Array.from(entity.vertices ?? []).map((vertex: any) => point(vertex.location ?? vertex)).filter(Boolean), closed: Boolean(entity.isClosed ?? (entity._flags & 1)) }
   }
@@ -242,7 +258,7 @@ function extract(document: CadDocument, section: string, layers: string[] | unde
     : section === 'blocks' ? blocks(document)
     : filtered
   const records = source.slice(0, limit).map((item: any) => section === 'layers'
-    ? { name: item.name, isOn: item.isOn !== false, isFrozen: (item.layerFlags & LayerFlags.Frozen) !== 0, colorIndex: item.color?._color ?? item._color?._color ?? null }
+    ? { name: item.name, isOn: item.isOn !== false, isFrozen: (item.layerFlags & LayerFlags.Frozen) !== 0, colorIndex: item.color?.index ?? null }
     : section === 'blocks' ? { name: item.name, entityCount: Array.from(item.entities ?? []).length }
     : entityRecord(item))
   return { ok: true, section, total: source.length, returned: records.length, truncated: records.length < source.length, records }
@@ -384,7 +400,7 @@ function svgColor(entity: CadEntity) {
 
 function svgDashArray(entity: CadEntity) {
   const segments = entity.getActiveLineType?.()?.segments ?? []
-  const values = Array.from(segments as Array<{ length: number }>).map(segment => Math.abs(segment.length)).filter(length => Number.isFinite(length) && length > 0)
+  const values = Array.from(segments).map(segment => Math.abs(segment.length)).filter(length => Number.isFinite(length) && length > 0)
   return values.length ? values.join(' ') : undefined
 }
 
@@ -531,6 +547,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       // Binary DXF avoids the ASCII reader's line trimming and writes encoded
       // bytes directly. Mark the output as Unicode so readers decode text as
       // UTF-8 rather than using the source DWG code page (for example GB2312).
+      if (!loaded.document.header) return error('CONVERSION_FAILED', 'The CAD document has no header.')
       loaded.document.header.version = Math.max(loaded.document.header.version, ACadVersion.AC1021)
       loaded.document.header.codePage = 'UTF-8'
       const fileStream = createWriteStream(output, { flags: 'wx' })

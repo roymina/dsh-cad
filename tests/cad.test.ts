@@ -14,6 +14,8 @@ describe('DWG support', () => {
     if (result.ok) {
       expect(result.entityCount).toBeGreaterThan(0)
       expect(result.warnings).toEqual(expect.objectContaining({ total: expect.any(Number), byCode: expect.any(Object), samples: expect.any(Array), truncated: expect.any(Boolean) }))
+      expect(result.version).toEqual(expect.objectContaining({ code: expect.any(Number), name: expect.any(String), productRange: expect.any(String) }))
+      expect(result.units).toEqual(expect.objectContaining({ code: expect.any(Number), name: expect.any(String) }))
     }
   })
 

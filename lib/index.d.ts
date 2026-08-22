@@ -36,9 +36,16 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
     ok: boolean;
     inputPath: string;
     format: string;
-    version: any;
-    codePage: any;
-    units: any;
+    version: {
+        code: number;
+        name: string;
+        productRange: string;
+    };
+    codePage: string | null;
+    units: {
+        code: number;
+        name: string;
+    };
     bounds: {
         min: {
             x: number;
@@ -82,9 +89,9 @@ export declare function extractCad(args: {
     returned: number;
     truncated: boolean;
     records: ({
-        handle: any;
+        handle: string | null;
         type: string;
-        layer: any;
+        layer: string;
         invisible: boolean;
     } | {
         name: any;
@@ -107,9 +114,9 @@ export declare function extractCad(args: {
     returned: number;
     truncated: boolean;
     records: ({
-        handle: any;
+        handle: string | null;
         type: string;
-        layer: any;
+        layer: string;
         invisible: boolean;
     } | {
         name: any;

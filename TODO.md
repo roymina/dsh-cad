@@ -31,7 +31,7 @@
 ## 阶段三：运行时加固（数据模型 / 资源 / 安全）
 
 - [ ] 3.1 消除 `any` 与私有字段依赖：使用库公开类型（`CadDocument`、`Entity`、`Layer`、`BlockRecord`），改用稳定 `objectName`、`Color.index` / `getRgb()`、`TextEntity.value` / `height`、`Circle.radius` 等公开接口；建立规范化层与显式判别联合 `{ ok: true, ... } | { ok: false, error: ... }`。
-- [ ] 3.2 改善元数据语义：`version` 返回 `{ code, name, productRange }`，`units` 返回 `{ code, name }`；Handle 返回十六进制字符串。
+- [x] 3.2 改善元数据语义：`version` 返回 `{ code, name, productRange }`，`units` 返回 `{ code, name }`；Handle 返回十六进制字符串。
 - [ ] 3.3 明确检查范围：拆分模型空间 / 各 Paper Space / 块定义 / 展开实例化实体数、Insert 数与每个块使用次数、嵌套块最大深度与循环引用、Xref/图片/字体/代理对象统计、可见/隐藏/冻结/关闭/不打印统计。
 - [ ] 3.4 改善 bounds：同时返回 Header 声明 bounds 与基于 `getBoundingBox()` 的实际 bounds、两者不一致标记、所选图层/Layout/空间窗口局部 bounds、无法计算 bounds 的实体类型及数量。
 - [ ] 3.5 将 CAD 解析与 PNG 渲染移入 Worker Thread 或隔离子进程；支持硬超时、终止 Worker 与最大并发数；PNG/SVG 导出不无控制并行。

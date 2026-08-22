@@ -13,8 +13,8 @@ exports[`DWG support > keeps SVG and PNG preview structure stable 1`] = `
     "text": 141,
   },
   "unsupported": {
-    "RasterImage": 23,
-    "Wipeout": 4,
+    "IMAGE": 23,
+    "WIPEOUT": 4,
   },
   "viewBox": "35378335.93267829 -10061587.95661971 177503758.94824237 7083215.421361351",
 }
