@@ -343,7 +343,7 @@ function extract(document: CadDocument, section: string, layers: string[] | unde
 }
 
 function escapeXml(value: string) {
-  return value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[char]!))
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[char]!))
 }
 
 function drawingPoints(entity: CadEntity): Array<{ x: number; y: number }> {
@@ -574,10 +574,14 @@ async function outputPath(config: Config, name: string, extension: string) {
   return result
 }
 
-function csv(records: Record<string, unknown>[]) {
+function csv(records: Record<string, unknown>[], bom = false) {
   const columns = Array.from(new Set(records.flatMap(record => Object.keys(record))))
-  const cell = (value: unknown) => `"${String(typeof value === 'object' ? JSON.stringify(value) : value ?? '').replaceAll('"', '""')}"`
-  return [columns.join(','), ...records.map(record => columns.map(column => cell(record[column])).join(','))].join('\n')
+  const cell = (value: unknown) => {
+    const text = String(typeof value === 'object' ? JSON.stringify(value) : value ?? '')
+    const safe = /^[=+\-@]/.test(text) ? `'${text}` : text
+    return `"${safe.replaceAll('"', '""')}"`
+  }
+  return `${bom ? '\uFEFF' : ''}${[columns.join(','), ...records.map(record => columns.map(column => cell(record[column])).join(','))].join('\n')}`
 }
 
 export async function inspectCad(pathValue: string, config: Config, signal?: AbortSignal) {
@@ -588,7 +592,7 @@ export async function inspectCad(pathValue: string, config: Config, signal?: Abo
   return inspect(loaded.document, loaded.inputPath, loaded.format, loaded.warnings, config.maxWarningSamples ?? 50)
 }
 
-export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; saveAs?: 'json' | 'csv'; outputName?: string }, config: Config, signal?: AbortSignal) {
+export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean }, config: Config, signal?: AbortSignal) {
   const invalid = invalidPath(args.path)
   if (invalid) return invalid
   if (args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 0)) return error('INVALID_ARGUMENT', 'limit must be a non-negative integer.')
@@ -599,7 +603,7 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
   if (!args.saveAs) return result
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-${args.section}`, args.saveAs)
-    await writeFile(output, args.saveAs === 'json' ? JSON.stringify(result, null, 2) : csv(result.records as Record<string, unknown>[]), { encoding: 'utf8', flag: 'wx' })
+    await writeFile(output, args.saveAs === 'json' ? JSON.stringify(result, null, 2) : csv(result.records as Record<string, unknown>[], args.bom), { encoding: 'utf8', flag: 'wx' })
     return { ...result, outputPath: output }
   } catch (cause: any) {
     return error(cause?.code === 'EEXIST' ? 'OUTPUT_EXISTS' : 'OUTPUT_FAILED', cause instanceof Error ? cause.message : String(cause))

@@ -129,6 +129,7 @@ export declare function extractCad(args: {
     limit?: number;
     saveAs?: 'json' | 'csv';
     outputName?: string;
+    bom?: boolean;
 }, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
     ok: boolean;
     section: string;

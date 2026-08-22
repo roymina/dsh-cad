@@ -118,6 +118,18 @@ describe('DWG support', () => {
     } finally { await rm(outputDir, { recursive: true, force: true }) }
   })
 
+  it('escapes XML controls and protects CSV formulas', async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-cad-'))
+    const inputPath = path.join(outputDir, 'safe.dxf')
+    const config = { outputDir, maxFileSizeMB: 50, maxEntities: 200_000, maxExtractItems: 10_000, maxImageDimension: 8192 }
+    await writeFile(inputPath, '0\nSECTION\n2\nENTITIES\n0\nTEXT\n8\n0\n10\n0\n20\n0\n40\n1\n1\n=1+1\u0001\n0\nENDSEC\n0\nEOF\n')
+    try {
+      const result = await extractCad({ path: inputPath, section: 'texts', saveAs: 'csv', outputName: 'safe.csv' }, config)
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(await readFile(result.outputPath, 'utf8')).toContain("'=1+1")
+    } finally { await rm(outputDir, { recursive: true, force: true }) }
+  })
+
   it('keeps SVG and PNG preview structure stable', async () => {
     const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-cad-'))
     const config = { outputDir, maxFileSizeMB: 50, maxEntities: 200_000, maxExtractItems: 10_000, maxImageDimension: 8192 }
