@@ -159,6 +159,14 @@ function unitsInfo(value: number | undefined) {
   return { code, name: unitNames[code] ?? 'Unknown' }
 }
 
+const unitToMillimeters: Record<number, number> = { 1: 25.4, 2: 304.8, 4: 1, 5: 10, 6: 1000, 7: 1_000_000 }
+
+function normalizeBounds(boundsValue: { min: { x: number; y: number }; max: { x: number; y: number } } | null, units: number | undefined) {
+  if (!boundsValue) return null
+  const scale = unitToMillimeters[Number(units)] ?? 1
+  return { min: { x: boundsValue.min.x * scale, y: boundsValue.min.y * scale }, max: { x: boundsValue.max.x * scale, y: boundsValue.max.y * scale }, units: 'Millimeters' }
+}
+
 function semanticSnapshot(document: CadDocument): SemanticSnapshot {
   const entityTypes: Record<string, number> = {}
   const textValues: string[] = []
@@ -371,7 +379,7 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     version: versionInfo(document.header?.version),
     codePage: document.header?.codePage ?? null,
     units: unitsInfo(document.header?.insUnits),
-    bounds: (() => { const actual = entityBounds(document); return { header: bounds(document), actual: actual.bounds, matchesHeader: JSON.stringify(bounds(document)) === JSON.stringify(actual.bounds), unableTypes: actual.unableTypes } })(),
+    bounds: (() => { const actual = entityBounds(document); const headerBounds = bounds(document); return { header: headerBounds, actual: actual.bounds, normalizedMillimeters: normalizeBounds(actual.bounds, document.header?.insUnits), matchesHeader: JSON.stringify(headerBounds) === JSON.stringify(actual.bounds), unableTypes: actual.unableTypes } })(),
     entityCount: all.length,
     entityTypes: byType,
     layers: layerRows(document),

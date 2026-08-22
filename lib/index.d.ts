@@ -76,6 +76,17 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
                 y: number;
             };
         } | null;
+        normalizedMillimeters: {
+            min: {
+                x: number;
+                y: number;
+            };
+            max: {
+                x: number;
+                y: number;
+            };
+            units: string;
+        } | null;
         matchesHeader: boolean;
         unableTypes: Record<string, number>;
     };
