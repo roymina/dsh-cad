@@ -283,15 +283,15 @@ function layerUsage(document: CadDocument) {
 }
 
 function qualityChecks(document: CadDocument) {
-  const handles = new Set<number>(); const duplicateHandles: string[] = []; let zeroLengthLines = 0; let invalidRadii = 0; let openPolylines = 0
+  const handles = new Set<number>(); const duplicateHandles: string[] = []; let zeroLengthLines = 0; let invalidRadii = 0; let openPolylines = 0; let closedContours = 0
   for (const entity of entities(document)) {
     if (handles.has(entity.handle)) duplicateHandles.push(`0x${entity.handle.toString(16).toUpperCase()}`); else handles.add(entity.handle)
     const kind = entityName(entity)
     if (kind === 'Line') { const a = point(entity.startPoint); const b = point(entity.endPoint); if (a && b && a.x === b.x && a.y === b.y) zeroLengthLines++ }
     if (kind === 'Circle' || kind === 'Arc') if (!Number.isFinite(Number(entity.radius)) || Number(entity.radius) <= 0) invalidRadii++
-    if (['LwPolyline', 'Polyline2D', 'Polyline3D'].includes(kind) && !entity.isClosed) openPolylines++
+    if (['LwPolyline', 'Polyline2D', 'Polyline3D'].includes(kind)) { if (!entity.isClosed) openPolylines++; else closedContours++ }
   }
-  return { duplicateHandles, zeroLengthLines, invalidRadii, openPolylines }
+  return { duplicateHandles, zeroLengthLines, invalidRadii, openPolylines, closedContours }
 }
 
 async function loadCad(input: string, config: Config, signal?: AbortSignal): Promise<CadResult | ReturnType<typeof error>> {

@@ -142,6 +142,7 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
         zeroLengthLines: number;
         invalidRadii: number;
         openPolylines: number;
+        closedContours: number;
     };
     textCount: number;
     warnings: WarningSummary;
