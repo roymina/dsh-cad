@@ -20,4 +20,5 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test -- --maxWorkers=1 --minWorkers=1
       - run: pnpm build
+      - run: pnpm worker:test
       - run: pnpm pack:check

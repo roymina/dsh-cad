@@ -35,6 +35,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "worker:test": "pnpm build && node tests/worker-smoke.mjs",
     "pack:check": "npm pack --dry-run",
     "prepack": "pnpm typecheck && pnpm test -- --maxWorkers=1 --minWorkers=1 && pnpm build"
   },

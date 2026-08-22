@@ -26,6 +26,7 @@ export interface Config {
   maxBlockDepth?: number
   maxBlockInstances?: number
   maxConcurrent?: number
+  maxWorkerTimeMs?: number
   allowedInputRoots?: string[]
   maxSvgBytes?: number
   maxCsvBytes?: number
@@ -45,6 +46,7 @@ export const Config: Schema<Config> = Schema.object({
   maxBlockDepth: Schema.number().default(16),
   maxBlockInstances: Schema.number().default(10_000),
   maxConcurrent: Schema.number().default(2),
+  maxWorkerTimeMs: Schema.number().default(30_000),
   allowedInputRoots: Schema.array(Schema.string()),
   maxSvgBytes: Schema.number().default(20_000_000),
   maxCsvBytes: Schema.number().default(20_000_000),
@@ -113,6 +115,7 @@ type CadDocument = AcadCadDocument
 type Warning = { code: string; message: string }
 type WarningSummary = { total: number; byCode: Record<string, number>; samples: Warning[]; truncated: boolean }
 type LoadedCadResult = { document: CadDocument; inputPath: string; format: 'dwg' | 'dxf'; warnings: Warning[] }
+type InternalConfig = Config & { workerMode?: boolean }
 export type CadError = { ok: false; error: { code: string; message: string; details?: Record<string, JsonValue> } }
 export type CadSuccess<T extends object> = { ok: true } & T
 export type CadResponse<T extends object> = CadSuccess<T> | CadError
@@ -159,7 +162,7 @@ async function outputMetadata(filePath: string) {
 }
 
 async function renderPngIsolated(svg: string, mode: 'width' | 'height', value: number, background: string | undefined, signal?: AbortSignal, timeoutMs = 30_000) {
-  const worker = new Worker(new URL('./render-worker.js', import.meta.url))
+  const worker = new Worker(new URL('./render-worker.js', import.meta.url), { execArgv: process.execArgv.filter(argument => !argument.startsWith('--input-type')) })
   return await new Promise<{ width: number; height: number; png: Uint8Array }>((resolve, reject) => {
     let settled = false
     const finish = (callback: () => void) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', cancel); void worker.terminate(); callback() }
@@ -169,6 +172,57 @@ async function renderPngIsolated(svg: string, mode: 'width' | 'height', value: n
     worker.on('message', (message: { error?: string; width?: number; height?: number; png?: Uint8Array }) => message.error ? finish(() => reject(new Error(message.error))) : finish(() => resolve({ width: message.width!, height: message.height!, png: message.png! })))
     worker.on('error', error => finish(() => reject(error)))
     worker.postMessage({ svg, mode, value, background })
+  })
+}
+
+type ParsedCadPayload = { format: 'dwg' | 'dxf'; buffer: ArrayBuffer; warnings: Warning[] }
+
+type CadOperation = 'inspect' | 'extract' | 'export' | 'compare'
+
+async function runCadOperation(operation: CadOperation, args: unknown, config: Config, signal?: AbortSignal): Promise<unknown | undefined> {
+  if (signal?.aborted) throw new Error('CANCELLED')
+  const release = await acquireJob(config.maxConcurrent ?? 2, signal)
+  try {
+  const worker = new Worker(new URL('./operation-worker.js', import.meta.url), {
+    execArgv: process.execArgv.filter(argument => !argument.startsWith('--input-type')),
+    workerData: { operation, args, config: { ...config, workerMode: true } },
+  })
+  return await new Promise<unknown | undefined>((resolve, reject) => {
+    let settled = false
+    const finish = (callback: () => void) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', cancel); void worker.terminate(); callback() }
+    const cancel = () => finish(() => reject(new Error('CANCELLED')))
+    const timer = setTimeout(() => finish(() => reject(new Error('TIMEOUT'))), config.maxWorkerTimeMs ?? 30_000)
+    signal?.addEventListener('abort', cancel, { once: true })
+    worker.on('message', (message: { result?: unknown; error?: string }) => message.error ? finish(() => reject(new Error(message.error))) : finish(() => resolve(message.result)))
+    worker.on('error', error => {
+      if (/Cannot find module|ERR_MODULE_NOT_FOUND/.test(error.message)) finish(() => resolve(undefined))
+      else finish(() => reject(error))
+    })
+  })
+  } finally {
+    release()
+  }
+}
+
+async function parseCadIsolated(format: 'dwg' | 'dxf', buffer: ArrayBuffer, signal?: AbortSignal, timeoutMs = 30_000): Promise<ParsedCadPayload | undefined> {
+  const worker = new Worker(new URL('./parse-worker.js', import.meta.url), { execArgv: process.execArgv.filter(argument => !argument.startsWith('--input-type')) })
+  return await new Promise<ParsedCadPayload | undefined>((resolve, reject) => {
+    let settled = false
+    const finish = (callback: () => void) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', cancel); void worker.terminate(); callback() }
+    const cancel = () => finish(() => reject(new Error('CANCELLED')))
+    const timer = setTimeout(() => finish(() => reject(new Error('TIMEOUT'))), timeoutMs)
+    signal?.addEventListener('abort', cancel, { once: true })
+    worker.on('message', (message: { error?: string; format?: 'dwg' | 'dxf'; buffer?: ArrayBuffer; warnings?: string[] }) => {
+      if (message.error) return finish(() => reject(new Error(message.error)))
+      if (!message.buffer || !message.format) return finish(() => reject(new Error('WORKER_INVALID_RESULT')))
+      finish(() => resolve({ format: message.format!, buffer: message.buffer!, warnings: (message.warnings ?? []).map(message => ({ code: 'PARSER_WARNING', message })) }))
+    })
+    worker.on('error', error => {
+      if (/Cannot find module|ERR_MODULE_NOT_FOUND/.test(error.message)) finish(() => resolve(undefined))
+      else finish(() => reject(error))
+    })
+    const workerBuffer = buffer.slice(0)
+    worker.postMessage({ format, buffer: workerBuffer }, [workerBuffer])
   })
 }
 
@@ -444,9 +498,13 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled while reading the drawing.')
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
     const notify = (_sender: unknown, event: unknown) => warnings.push({ code: 'PARSER_WARNING', message: String(event && typeof event === 'object' && 'message' in event ? event.message : event) })
-    const document = format === 'dwg'
-      ? DwgReader.readFromStream(buffer, notify)
-      : DxfReader.readFromStream(new Uint8Array(buffer), notify)
+    const isolated = (config as InternalConfig).workerMode ? undefined : await parseCadIsolated(format, buffer, signal, config.maxWorkerTimeMs ?? 30_000)
+    const document = isolated
+      ? isolated.format === 'dwg' ? DwgReader.readFromStream(isolated.buffer, notify) : DxfReader.readFromStream(new Uint8Array(isolated.buffer), notify)
+      : format === 'dwg'
+        ? DwgReader.readFromStream(buffer, notify)
+        : DxfReader.readFromStream(new Uint8Array(buffer), notify)
+    warnings.push(...(isolated?.warnings ?? []))
     const limited = resourceLimitError(document, config)
     if (limited) return limited
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after parsing the drawing.')
@@ -456,6 +514,7 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
     return result
   } catch (cause) {
     if (cause instanceof Error && cause.message === 'CANCELLED') return error('CANCELLED', 'Operation was cancelled.')
+    if (cause instanceof Error && cause.message === 'TIMEOUT') return error('TIMEOUT', 'CAD parsing exceeded the worker time limit.', { maxWorkerTimeMs: config.maxWorkerTimeMs ?? 30_000 })
     return error('PARSE_FAILED', 'The CAD drawing could not be parsed.', { path: inputPath, message: cause instanceof Error ? cause.message : String(cause) })
   } finally { release?.() }
 }
@@ -772,7 +831,7 @@ function csv(records: Record<string, unknown>[], bom = false) {
   return `${bom ? '\uFEFF' : ''}${[columns.join(','), ...records.map(record => columns.map(column => cell(record[column])).join(','))].join('\n')}`
 }
 
-export async function inspectCad(pathValue: string, config: Config, signal?: AbortSignal) {
+async function inspectCadCore(pathValue: string, config: Config, signal?: AbortSignal) {
   const invalid = invalidPath(pathValue)
   if (invalid) return invalid
   const loaded = await loadCad(pathValue, config, signal)
@@ -780,7 +839,7 @@ export async function inspectCad(pathValue: string, config: Config, signal?: Abo
   return inspect(loaded.document, loaded.inputPath, loaded.format, loaded.warnings, config.maxWarningSamples ?? 50)
 }
 
-export async function compareCad(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal) {
+async function compareCadCore(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal) {
   const [first, second] = await Promise.all([loadCad(firstPath, config, signal), loadCad(secondPath, config, signal)])
   if (isErrorResult(first)) return first
   if (isErrorResult(second)) return second
@@ -788,7 +847,7 @@ export async function compareCad(firstPath: string, secondPath: string, config: 
   return success({ firstPath: first.inputPath, secondPath: second.inputPath, equal: JSON.stringify(left) === JSON.stringify(right), differences: { texts: left.texts.length !== right.texts.length || JSON.stringify(left.texts) !== JSON.stringify(right.texts), entityTypes: !equalRecords(left.entityTypes, right.entityTypes), layers: JSON.stringify(left.layers) !== JSON.stringify(right.layers) } })
 }
 
-export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; offset?: number; search?: string; handle?: string; window?: { minX: number; minY: number; maxX: number; maxY: number }; nearest?: { x: number; y: number }; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean; summary?: boolean }, config: Config, signal?: AbortSignal) {
+async function extractCadCore(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; offset?: number; search?: string; handle?: string; window?: { minX: number; minY: number; maxX: number; maxY: number }; nearest?: { x: number; y: number }; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean; summary?: boolean }, config: Config, signal?: AbortSignal) {
   const invalid = invalidPath(args.path)
   if (invalid) return invalid
   if (args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 0)) return error('INVALID_ARGUMENT', 'limit must be a non-negative integer.')
@@ -811,7 +870,7 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
   }
 }
 
-export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'dxf'; outputName?: string; layers?: string[]; layout?: string; width?: number; height?: number; background?: string }, config: Config, signal?: AbortSignal) {
+async function exportCadCore(args: { path: string; format: 'svg' | 'png' | 'dxf'; outputName?: string; layers?: string[]; layout?: string; width?: number; height?: number; background?: string }, config: Config, signal?: AbortSignal) {
   const invalid = invalidPath(args.path)
   if (invalid) return invalid
   if (args.outputName !== undefined && !validOutputName(args.outputName)) return error('INVALID_ARGUMENT', 'outputName must be a non-empty filename without path segments or reserved characters.')
@@ -822,6 +881,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
   const loaded = await loadCad(args.path, config, signal)
   if (isErrorResult(loaded)) return loaded
   if (args.layout && !layoutEntities(loaded.document, args.layout)) return error('LAYOUT_NOT_FOUND', 'The requested layout does not exist.', { layout: args.layout })
+  let renderRelease: (() => void) | undefined
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-preview`, args.format)
     if (args.format === 'dxf') {
@@ -881,6 +941,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
         warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
       })
     }
+    renderRelease = await acquireJob(config.maxConcurrent ?? 2, signal)
     const drawing = makeSvg(loaded.document, args.layers, args.background, config.maxBlockDepth ?? 16, config.maxBlockInstances ?? 10_000, args.layout)
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before rendering.')
     let outputDimensions = { imageWidth: drawing.bounds.max.x - drawing.bounds.min.x, imageHeight: drawing.bounds.max.y - drawing.bounds.min.y }
@@ -900,7 +961,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       }
       let rendered: { width: number; height: number; png: Uint8Array }
       try {
-        rendered = await renderPngIsolated(drawing.svg, args.height ? 'height' : 'width', args.height ? targetHeight : targetWidth, args.background === 'transparent' ? undefined : args.background ?? 'white', signal)
+        rendered = await renderPngIsolated(drawing.svg, args.height ? 'height' : 'width', args.height ? targetHeight : targetWidth, args.background === 'transparent' ? undefined : args.background ?? 'white', signal, config.maxWorkerTimeMs ?? 30_000)
       } catch (cause) {
         if (cause instanceof Error && /Cannot find module|ERR_MODULE_NOT_FOUND/.test(cause.message)) {
           const fallback = new Resvg(drawing.svg, { fitTo: args.height ? { mode: 'height', value: targetHeight } : { mode: 'width', value: targetWidth }, background: args.background === 'transparent' ? undefined : args.background ?? 'white' }).render()
@@ -920,7 +981,59 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
     })
   } catch (cause: unknown) {
+    if (cause instanceof Error && cause.message === 'CANCELLED') return error('CANCELLED', 'Operation was cancelled.')
+    if (cause instanceof Error && cause.message === 'TIMEOUT') return error('TIMEOUT', 'Rendering exceeded the worker time limit.', { maxWorkerTimeMs: config.maxWorkerTimeMs ?? 30_000 })
     return error(causeCode(cause) === 'EEXIST' ? 'OUTPUT_EXISTS' : 'EXPORT_FAILED', cause instanceof Error ? cause.message : String(cause))
+  } finally {
+    renderRelease?.()
+  }
+}
+
+export async function inspectCad(pathValue: string, config: Config, signal?: AbortSignal) {
+  if ((config as InternalConfig).workerMode) return inspectCadCore(pathValue, config, signal)
+  try {
+    const isolated = await runCadOperation('inspect', { path: pathValue }, config, signal)
+    return isolated ?? inspectCadCore(pathValue, config, signal)
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === 'CANCELLED') return error('CANCELLED', 'Operation was cancelled.')
+    if (cause instanceof Error && cause.message === 'TIMEOUT') return error('TIMEOUT', 'CAD inspection exceeded the worker time limit.', { maxWorkerTimeMs: config.maxWorkerTimeMs ?? 30_000 })
+    return error('PARSE_FAILED', 'The isolated CAD operation failed.', { message: cause instanceof Error ? cause.message : String(cause) })
+  }
+}
+
+export async function compareCad(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal) {
+  if ((config as InternalConfig).workerMode) return compareCadCore(firstPath, secondPath, config, signal)
+  try {
+    const isolated = await runCadOperation('compare', { firstPath, secondPath }, config, signal)
+    return isolated ?? compareCadCore(firstPath, secondPath, config, signal)
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === 'CANCELLED') return error('CANCELLED', 'Operation was cancelled.')
+    if (cause instanceof Error && cause.message === 'TIMEOUT') return error('TIMEOUT', 'CAD comparison exceeded the worker time limit.', { maxWorkerTimeMs: config.maxWorkerTimeMs ?? 30_000 })
+    return error('PARSE_FAILED', 'The isolated CAD operation failed.', { message: cause instanceof Error ? cause.message : String(cause) })
+  }
+}
+
+export async function extractCad(args: Parameters<typeof extractCadCore>[0], config: Config, signal?: AbortSignal) {
+  if ((config as InternalConfig).workerMode) return extractCadCore(args, config, signal)
+  try {
+    const isolated = await runCadOperation('extract', args, config, signal)
+    return isolated ?? extractCadCore(args, config, signal)
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === 'CANCELLED') return error('CANCELLED', 'Operation was cancelled.')
+    if (cause instanceof Error && cause.message === 'TIMEOUT') return error('TIMEOUT', 'CAD extraction exceeded the worker time limit.', { maxWorkerTimeMs: config.maxWorkerTimeMs ?? 30_000 })
+    return error('PARSE_FAILED', 'The isolated CAD operation failed.', { message: cause instanceof Error ? cause.message : String(cause) })
+  }
+}
+
+export async function exportCad(args: Parameters<typeof exportCadCore>[0], config: Config, signal?: AbortSignal) {
+  if ((config as InternalConfig).workerMode) return exportCadCore(args, config, signal)
+  try {
+    const isolated = await runCadOperation('export', args, config, signal)
+    return isolated ?? exportCadCore(args, config, signal)
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === 'CANCELLED') return error('CANCELLED', 'Operation was cancelled.')
+    if (cause instanceof Error && cause.message === 'TIMEOUT') return error('TIMEOUT', 'CAD export exceeded the worker time limit.', { maxWorkerTimeMs: config.maxWorkerTimeMs ?? 30_000 })
+    return error('EXPORT_FAILED', 'The isolated CAD operation failed.', { message: cause instanceof Error ? cause.message : String(cause) })
   }
 }
 

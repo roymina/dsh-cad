@@ -34,7 +34,7 @@
 - [x] 3.2 改善元数据语义：`version` 返回 `{ code, name, productRange }`，`units` 返回 `{ code, name }`；Handle 返回十六进制字符串。
 - [x] 3.3 明确检查范围：拆分模型空间 / 各 Paper Space / 块定义 / 展开实例化实体数、Insert 数与每个块使用次数、嵌套块最大深度与循环引用、Xref/图片/字体/代理对象统计、可见/隐藏/冻结/关闭/不打印统计。
 - [x] 3.4 改善 bounds：同时返回 Header 声明 bounds 与基于 `getBoundingBox()` 的实际 bounds、两者不一致标记、所选图层/Layout/空间窗口局部 bounds、无法计算 bounds 的实体类型及数量。
-- [ ] 3.5 将 CAD 解析与 PNG 渲染移入 Worker Thread 或隔离子进程；支持硬超时、终止 Worker 与最大并发数；PNG/SVG 导出不无控制并行。
+- [x] 3.5 将 CAD 解析与 PNG 渲染移入 Worker Thread 或隔离子进程；支持硬超时、终止 Worker 与最大并发数；PNG/SVG 导出不无控制并行。
 - [x] 3.6 增加资源限制：总顶点数、单实体最大顶点数、块展开实例数与最大递归深度、SVG 最大字节数、PNG 最大宽/高与总像素数、单条文本与最终 JSON/CSV 最大字节数。
 - [x] 3.7 在读取、解析、规范化、渲染、写入各阶段之间检查 `AbortSignal`。
 - [x] 3.8 输入路径权限：增加 `allowedInputRoots`（默认限制到工作区）、canonical path 归属检查、区分 `ENOENT` / `EACCES` / 非法路径 / 读取失败、明确符号链接策略并补测试。

@@ -14,6 +14,7 @@ export interface Config {
     maxBlockDepth?: number;
     maxBlockInstances?: number;
     maxConcurrent?: number;
+    maxWorkerTimeMs?: number;
     allowedInputRoots?: string[];
     maxSvgBytes?: number;
     maxCsvBytes?: number;
@@ -44,135 +45,7 @@ export type CadSuccess<T extends object> = {
     ok: true;
 } & T;
 export type CadResponse<T extends object> = CadSuccess<T> | CadError;
-export declare function inspectCad(pathValue: string, config: Config, signal?: AbortSignal): Promise<CadError | CadSuccess<{
-    inputPath: string;
-    format: string;
-    version: {
-        code: number;
-        name: string;
-        productRange: string;
-    };
-    codePage: string | null;
-    units: {
-        code: number;
-        name: string;
-    };
-    bounds: {
-        header: {
-            min: {
-                x: number;
-                y: number;
-                z: number;
-            };
-            max: {
-                x: number;
-                y: number;
-                z: number;
-            };
-        } | null;
-        actual: {
-            min: {
-                x: number;
-                y: number;
-            };
-            max: {
-                x: number;
-                y: number;
-            };
-        } | null;
-        normalizedMillimeters: {
-            min: {
-                x: number;
-                y: number;
-            };
-            max: {
-                x: number;
-                y: number;
-            };
-            units: string;
-        } | null;
-        matchesHeader: boolean;
-        unableTypes: Record<string, number>;
-    };
-    entityCount: number;
-    entityTypes: Record<string, number>;
-    layers: {
-        name: string;
-        isOn: boolean;
-        isFrozen: boolean;
-        colorIndex: number;
-    }[];
-    entityCountByLayer: Record<string, number>;
-    blocks: {
-        name: string;
-        entityCount: number;
-        nestedBlocks: (string | undefined)[];
-    }[];
-    scope: {
-        modelSpace: {
-            entityCount: number;
-        };
-        paperSpaces: {
-            name: string;
-            entityCount: number;
-        }[];
-        blocks: {
-            name: string;
-            entityCount: number;
-            referenceCount: number;
-        }[];
-        insertCount: number;
-        insertReferences: Record<string, number>;
-        maxNestedDepth: number;
-        circularReferenceCount: number;
-        visibility: {
-            visible: number;
-            hidden: number;
-            frozen: number;
-            off: number;
-            nonPlot: number;
-        };
-        resources: {
-            xrefs: number;
-            images: number;
-            fonts: number;
-            proxyEntities: number;
-        };
-    };
-    geometryMetrics: {
-        totalLength: number;
-        perimeter: number;
-        area: number;
-    };
-    layerUsage: {
-        layers: {
-            name: string;
-            entityCount: number;
-            empty: boolean;
-        }[];
-        emptyLayers: string[];
-    };
-    qualityChecks: {
-        duplicateHandles: string[];
-        zeroLengthLines: number;
-        invalidRadii: number;
-        openPolylines: number;
-        closedContours: number;
-    };
-    textCount: number;
-    warnings: WarningSummary;
-}>>;
-export declare function compareCad(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal): Promise<CadError | CadSuccess<{
-    firstPath: string;
-    secondPath: string;
-    equal: boolean;
-    differences: {
-        texts: boolean;
-        entityTypes: boolean;
-        layers: boolean;
-    };
-}>>;
-export declare function extractCad(args: {
+declare function extractCadCore(args: {
     path: string;
     section: 'texts' | 'layers' | 'blocks' | 'entities';
     layers?: string[];
@@ -231,7 +104,7 @@ export declare function extractCad(args: {
         colorIndex?: undefined;
     })[];
 }>;
-export declare function exportCad(args: {
+declare function exportCadCore(args: {
     path: string;
     format: 'svg' | 'png' | 'dxf';
     outputName?: string;
@@ -347,5 +220,9 @@ export declare function exportCad(args: {
     format: string;
     outputPath: string;
 }>;
+export declare function inspectCad(pathValue: string, config: Config, signal?: AbortSignal): Promise<{}>;
+export declare function compareCad(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal): Promise<{}>;
+export declare function extractCad(args: Parameters<typeof extractCadCore>[0], config: Config, signal?: AbortSignal): Promise<{}>;
+export declare function exportCad(args: Parameters<typeof exportCadCore>[0], config: Config, signal?: AbortSignal): Promise<{}>;
 export declare function apply(ctx: Context, config: Config): void;
 export {};
