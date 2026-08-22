@@ -5,12 +5,23 @@
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    }
+  },
+  "engines": { "node": ">=20" },
+  "repository": { "type": "git", "url": "git+https://github.com/roymina/dsh-cad.git" },
+  "keywords": ["cad", "dwg", "dxf", "deepseek", "harness"],
+  "sideEffects": false,
   "files": ["lib", "cordis.patch.yml", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "prepack": "pnpm typecheck && pnpm test -- --maxWorkers=1 --minWorkers=1 && pnpm build"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.1",
