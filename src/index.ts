@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-tools'
-import { ACadVersion, CadUtils, DwgReader, DxfReader, DxfWriter, LayerFlags } from '@node-projects/acad-ts'
+import { ACadVersion, BlockTypeFlags, CadUtils, DwgReader, DxfReader, DxfWriter, LayerFlags } from '@node-projects/acad-ts'
 import type { CadDocument as AcadCadDocument, Entity as AcadEntity } from '@node-projects/acad-ts'
 import { Resvg } from '@resvg/resvg-js'
 
@@ -58,7 +58,7 @@ export const Config: Schema<Config> = Schema.object({
 type PointLike = { x: number; y: number; z?: number }
 type CadVertex = PointLike & { location?: PointLike; bulge?: number }
 type CadLayer = { name: string; isOn: boolean; layerFlags: number; plotFlag: boolean; color?: { index: number } }
-type CadBlock = { name: string; entities: Iterable<CadEntity>; source?: CadBlock | null; xrefFile?: string; isXRef?: boolean }
+type CadBlock = { name: string; entities: Iterable<CadEntity>; blockFlags?: number; source?: CadBlock | null; xrefFile?: string; isXRef?: boolean }
 type CadBoundary = { getPoints?: (resolution: number) => unknown[] }
 type CadEntity = AcadEntity & {
   objectName: string
@@ -261,7 +261,7 @@ function summarizeWarnings(warnings: Warning[], maxSamples = 50): WarningSummary
 
 function entityName(entity: CadEntity) {
   const objectName = entity?.objectName ?? 'UNKNOWN'
-  return ({ LINE: 'Line', CIRCLE: 'Circle', ARC: 'Arc', ELLIPSE: 'Ellipse', SPLINE: 'Spline', HATCH: 'Hatch', INSERT: 'Insert', POINT: 'Point', SOLID: 'Solid', LEADER: 'Leader', TEXT: 'TextEntity', MTEXT: 'MText', ATTRIB: 'AttributeEntity', LWPOLYLINE: 'LwPolyline', POLYLINE: 'Polyline2D', POLYLINE3D: 'Polyline3D' } as Record<string, string>)[objectName] ?? objectName
+  return ({ LINE: 'Line', CIRCLE: 'Circle', ARC: 'Arc', ELLIPSE: 'Ellipse', SPLINE: 'Spline', HATCH: 'Hatch', INSERT: 'Insert', POINT: 'Point', SOLID: 'Solid', LEADER: 'Leader', DIMENSION: 'Dimension', TEXT: 'TextEntity', MTEXT: 'MText', ATTRIB: 'AttributeEntity', LWPOLYLINE: 'LwPolyline', POLYLINE: 'Polyline2D', POLYLINE3D: 'Polyline3D' } as Record<string, string>)[objectName] ?? objectName
 }
 
 function entityLayer(entity: CadEntity) {
@@ -415,7 +415,7 @@ function scopeStats(document: CadDocument) {
     maxNestedDepth = Math.max(maxNestedDepth, depth)
   }
   const resources = {
-    xrefs: blocks(document).filter(block => block.source || Boolean(block['xrefFile']) || Boolean(block['isXRef'])).length,
+    xrefs: blocks(document).filter(block => block.source || Boolean(block['xrefFile']) || Boolean(block['isXRef']) || (Number(block.blockFlags ?? 0) & BlockTypeFlags.XRef) !== 0).length,
     images: Array.from(document.imageDefinitions ?? []).length,
     fonts: Array.from(document.textStyles ?? []).length,
     proxyEntities: model.filter(entity => (entity.proxyGeometries?.length ?? 0) > 0).length,

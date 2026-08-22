@@ -31,7 +31,11 @@ describe('DWG support', () => {
     try {
       const inspected = await inspectCad(secondFixture, config)
       expect(inspected.ok).toBe(true)
-      if (inspected.ok) expect(inspected.layers.some(layer => layer.isFrozen)).toBe(true)
+      if (inspected.ok) {
+        expect(inspected.layers.some(layer => layer.isFrozen)).toBe(true)
+        expect(inspected.entityTypes).toEqual(expect.objectContaining({ Insert: 115, Hatch: 15, Ellipse: 10, IMAGE: 23, WIPEOUT: 4 }))
+        expect(inspected.scope.paperSpaces.length).toBeGreaterThanOrEqual(2)
+      }
       const svg = await exportCad({ path: secondFixture, format: 'svg', outputName: 'second.svg' }, config)
       expect(svg.ok).toBe(true)
       if (svg.ok) {

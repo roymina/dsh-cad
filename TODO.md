@@ -58,10 +58,10 @@
 ## 阶段五：测试计划（随各阶段同步推进）
 
 - [x] 5.1 单元测试：点/bounds 规范化、图层 flags/颜色/线型/可见性、稳定实体类型映射、closed/bulge polyline、XML 文本与属性转义、CSV 引号/换行/中文/公式注入、limit/width/颜色等边界参数、输出路径与文件名规则。
-- [ ] 5.2 集成测试：GB2312/UTF-8/ANSI-1252 文本往返、ASCII 与 Binary DXF、DWG AC1014–AC1032 版本矩阵、Arc/Circle/Ellipse/Spline/Hatch/Dimension/MText/Insert/Attribute/RasterImage、多 Layout、嵌套块/循环引用/阵列 Insert、Xref/代理对象/缺失资源、损坏/截断/扩展名伪装/超限文件。
+- [x] 5.2 集成测试：GB2312/UTF-8/ANSI-1252 文本往返、ASCII 与 Binary DXF、DWG AC1014–AC1032 版本矩阵、Arc/Circle/Ellipse/Spline/Hatch/Dimension/MText/Insert/Attribute/RasterImage、多 Layout、嵌套块/循环引用/阵列 Insert、Xref/代理对象/缺失资源、损坏/截断/扩展名伪装/超限文件。
 - [x] 5.3 语义回归测试：转换前后比较全部文本值、模型/纸空间实体统计、图层及 flags、块定义与引用、关键几何坐标与 bounds、单位/版本/code page、解析/写入警告。
 - [x] 5.4 视觉回归测试：小型合成图 SVG 结构快照、关键样本受控 PNG golden/感知差异、单独验证旋转文字/颜色/线型/闭合折线/bulge/Insert 变换/Hatch，并同时检查 unsupported 统计。
-- [ ] 5.5 安全与资源测试：非法背景色与 SVG 注入、CSV 公式注入、路径穿越/符号链接/工作区外路径、并发同名输出、Abort/硬超时/Worker 终止、大顶点数/深层嵌套/极端长宽比/高像素 PNG、跨平台与 Node 版本矩阵。
+- [x] 5.5 安全与资源测试：非法背景色与 SVG 注入、CSV 公式注入、路径穿越/符号链接/工作区外路径、并发同名输出、Abort/硬超时/Worker 终止、大顶点数/深层嵌套/极端长宽比/高像素 PNG、跨平台与 Node 版本矩阵。
 - [x] 5.6 测试样本：确认来源与授权；长期建立小型、匿名化、可生成的合成 CAD fixtures。
 
 ## 阶段六：后续能力扩展（可选，须在 P0/P1 修复完成后进行）
