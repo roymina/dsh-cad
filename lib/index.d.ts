@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
+import type { JsonValue } from '@deepseek-ai/dsh-tools';
 export declare const name = "dsh-cad-plugin";
 export declare const inject: string[];
 export interface Config {
@@ -36,7 +37,7 @@ type ErrorResult = {
     error: {
         code: string;
         message: string;
-        details?: Record<string, any>;
+        details?: Record<string, JsonValue>;
     };
 };
 export declare function inspectCad(pathValue: string, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
@@ -93,10 +94,10 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
     entityCount: number;
     entityTypes: Record<string, number>;
     layers: {
-        name: any;
+        name: string;
         isOn: boolean;
         isFrozen: boolean;
-        colorIndex: any;
+        colorIndex: number;
     }[];
     entityCountByLayer: Record<string, number>;
     blocks: {
@@ -208,7 +209,7 @@ export declare function extractCad(args: {
         name: any;
         isOn: boolean;
         isFrozen: boolean;
-        colorIndex: any;
+        colorIndex: number;
         entityCount?: undefined;
     } | {
         name: any;
@@ -244,7 +245,7 @@ export declare function extractCad(args: {
         name: any;
         isOn: boolean;
         isFrozen: boolean;
-        colorIndex: any;
+        colorIndex: number;
         entityCount?: undefined;
     } | {
         name: any;
@@ -271,7 +272,7 @@ export declare function exportCad(args: {
         details: {
             code: string;
             message: string;
-            details?: Record<string, any>;
+            details?: Record<string, JsonValue>;
         };
     };
     format: string;
