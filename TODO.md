@@ -21,7 +21,7 @@
 - [x] 2.3 支持 Arc、Ellipse、Spline、Hatch。
 - [x] 2.4 支持 Dimension、Leader、MLeader、RasterImage、Wipeout、Solid、Point、Mesh，或显式分类为不支持（不允许静默遗漏）。
 - [x] 2.5 支持块属性与纸空间（Paper Space / Layout）内容。
-- [ ] 2.6 修复闭合折线真正闭合、Polyline bulge 弧段按弧绘制（不再画成直线）。
+- [x] 2.6 修复闭合折线真正闭合、Polyline bulge 弧段按弧绘制（不再画成直线）。
 - [ ] 2.7 应用文字旋转、对齐、宽度因子、字体与 MText 格式。
 - [ ] 2.8 应用实体颜色与线型；冻结、关闭、不打印图层不再显示。
 - [ ] 2.9 图层过滤后重新计算局部 bounds；不支持的 Insert 或其他实体位置不参与 bounds 计算。

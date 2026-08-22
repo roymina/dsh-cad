@@ -291,8 +291,24 @@ const svgRenderers: Record<string, SvgRenderer> = {
 }
 
 function renderPolyline(entity: CadEntity, color: string) {
-  const values = drawingPoints(entity).map(point => `${point.x},${-point.y}`).join(' ')
-  return values ? `<polyline points="${values}" fill="none" stroke="${color}"/>` : ''
+  const vertices = Array.from(entity.vertices ?? []) as CadEntity[]
+  const points = vertices.map(vertex => point(vertex.location ?? vertex)).filter(Boolean) as Array<{ x: number; y: number }>
+  if (points.length < 2) return ''
+  let path = `M ${points[0].x} ${-points[0].y}`
+  const segmentCount = entity.isClosed ? points.length : points.length - 1
+  for (let index = 0; index < segmentCount; index++) {
+    const end = points[(index + 1) % points.length]
+    const bulge = Number(vertices[index]?.bulge ?? 0)
+    if (Number.isFinite(bulge) && bulge !== 0) {
+      const start = points[index]
+      const chord = Math.hypot(end.x - start.x, end.y - start.y)
+      const angle = 4 * Math.atan(bulge)
+      const radius = chord / (2 * Math.sin(Math.abs(angle) / 2))
+      path += Number.isFinite(radius) ? ` A ${radius} ${radius} 0 ${Math.abs(angle) > Math.PI ? 1 : 0} ${bulge < 0 ? 1 : 0} ${end.x} ${-end.y}` : ` L ${end.x} ${-end.y}`
+    } else path += ` L ${end.x} ${-end.y}`
+  }
+  if (entity.isClosed) path += ' Z'
+  return `<path d="${path}" fill="none" stroke="${color}"/>`
 }
 
 function renderText(entity: CadEntity, color: string) {

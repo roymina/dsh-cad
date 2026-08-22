@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import path from 'node:path'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import { apply, exportCad, extractCad, inspectCad } from '../src/index.js'
 
@@ -91,5 +91,17 @@ describe('DWG support', () => {
     await expect(exportCad({ path: fixture, format: 'png', width: 0 }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'png', width: 2000, outputName: '../preview' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'svg', layout: 'missing-layout' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'LAYOUT_NOT_FOUND' } })
+  })
+
+  it('renders closed bulge polylines as SVG arcs', async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-cad-'))
+    const inputPath = path.join(outputDir, 'bulge.dxf')
+    const config = { outputDir, maxFileSizeMB: 50, maxEntities: 200_000, maxExtractItems: 10_000, maxImageDimension: 8192 }
+    await writeFile(inputPath, '0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n90\n2\n70\n1\n10\n0\n20\n0\n42\n1\n10\n10\n20\n0\n0\nENDSEC\n0\nEOF\n')
+    try {
+      const result = await exportCad({ path: inputPath, format: 'svg', outputName: 'bulge.svg' }, config)
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(await readFile(result.outputPath, 'utf8')).toMatch(/<path[^>]+ A /)
+    } finally { await rm(outputDir, { recursive: true, force: true }) }
   })
 })
