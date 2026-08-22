@@ -91,6 +91,7 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
     blocks: {
         name: any;
         entityCount: number;
+        nestedBlocks: any[];
     }[];
     scope: {
         modelSpace: {

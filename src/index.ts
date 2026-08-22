@@ -340,7 +340,7 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     entityTypes: byType,
     layers: layerRows(document),
     entityCountByLayer: byLayer,
-    blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length })),
+    blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length, nestedBlocks: Array.from(block.entities ?? []).filter((entity: any) => entityName(entity) === 'Insert').map((entity: any) => entity.block?.name).filter(Boolean) })),
     scope: scopeStats(document),
     textCount: all.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity))).length,
     warnings: summarizeWarnings(warnings, maxWarningSamples),
@@ -358,7 +358,7 @@ function entityRecord(entity: CadEntity) {
   if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') {
     return { ...base, vertices: Array.from(entity.vertices ?? []).map((vertex: any) => point(vertex.location ?? vertex)).filter(Boolean), closed: Boolean(entity.isClosed) }
   }
-  if (kind === 'Insert') return { ...base, block: entity.block?.name ?? entity.block?.record?.name ?? null, position: point(entity.insertPoint), rotation: entity.rotation ?? 0 }
+  if (kind === 'Insert') return { ...base, block: entity.block?.name ?? null, position: point(entity.insertPoint), rotation: entity.rotation ?? 0, scale: { x: entity.xScale ?? 1, y: entity.yScale ?? 1, z: entity.zScale ?? 1 }, attributes: Array.from(entity.attributes ?? []).map((attribute: any) => ({ tag: attribute.tag, text: attribute.value, position: point(attribute.insertPoint) })) }
   return base
 }
 

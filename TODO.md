@@ -49,7 +49,7 @@
 - [x] 4.2 Harness 展示增强：`cad_export` 返回真实图像尺寸、输出字节数、哈希、支持/不支持统计与完整度；Harness 支持时直接展示 PNG/SVG 预览或可点击产物；提供 read/parse/normalize/render/write 阶段进度。
 - [x] 4.3 工具描述中列出合法实体类型、Layout 范围、预览局限与转换数据损失风险。
 - [x] 4.4 分页与过滤：`offset`/游标分页、文本/正则/大小写不敏感搜索、按 Handle 查询单实体、按空间窗口/bounding box 查询、按 Layout 查询、图层与实体类型过滤大小写不敏感、使用稳定 DXF 类型名并在 inspect 中返回可用类型。
-- [ ] 4.5 块与属性：Insert 属性提取、块定义树与嵌套关系、每个块引用次数与插入位置、动态块/匿名块关联信息、循环引用检测、受深度/实例限制的块展开。
+- [x] 4.5 块与属性：Insert 属性提取、块定义树与嵌套关系、每个块引用次数与插入位置、动态块/匿名块关联信息、循环引用检测、受深度/实例限制的块展开。
 - [ ] 4.6 控制模型上下文：默认返回条数降至 100–500；文件报告上限与模型响应上限分开配置；`saveAs` 默认只返回摘要/记录数/截断状态/路径/哈希；提供 `summary` 模式生成结构化图纸概览。
 - [x] 4.7 发布流程：增加 `prepack`（typecheck + test + build）、CI（typecheck/test/build/pack dry-run/生产依赖审计）、`exports`/Node `engines`/repository/keywords/publishConfig/sideEffects 声明，并明确 `lib` 是否提交。
 - [ ] 4.8 依赖管理：确认 `@deepseek-ai/dsh-tools` 的 optional peer 依赖是否成立；建立回归测试后升级 `@node-projects/acad-ts` 至 3.0.2；引入依赖更新机器人并要求 CAD 语义回归测试门禁；记录 `@resvg/resvg-js` 平台与原生包安装要求。
