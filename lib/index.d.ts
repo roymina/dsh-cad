@@ -124,9 +124,85 @@ export declare function exportCad(args: {
     background?: string;
 }, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
     ok: boolean;
+    error: {
+        code: string;
+        message: string;
+        details: {
+            code: string;
+            message: string;
+            details?: Record<string, any>;
+        };
+    };
     format: string;
     outputPath: string;
+    conversionValidation: {
+        status: string;
+        checks: {
+            textValuesMatch: boolean;
+            entityTypesMatch: boolean;
+            layersMatch: boolean;
+        };
+        differences: string[];
+        unpreservedObjectTypes: string[];
+    };
+    lossRisk: {
+        level: string;
+        reasons: string[];
+    };
     warnings: Warning[];
+    unpreservedObjectTypes?: undefined;
+    bounds?: undefined;
+    renderedEntityCount?: undefined;
+} | {
+    ok: boolean;
+    error: {
+        code: string;
+        message: string;
+        details: {
+            differences: string[];
+        };
+    };
+    format: string;
+    outputPath: string;
+    conversionValidation: {
+        status: "passed" | "failed";
+        checks: {
+            textValuesMatch: boolean;
+            entityTypesMatch: boolean;
+            layersMatch: boolean;
+        };
+        differences: string[];
+        unpreservedObjectTypes: string[];
+    };
+    lossRisk: {
+        level: "severe" | "warning" | "none";
+        reasons: string[];
+    };
+    unpreservedObjectTypes: string[];
+    warnings: Warning[];
+    bounds?: undefined;
+    renderedEntityCount?: undefined;
+} | {
+    ok: boolean;
+    format: string;
+    outputPath: string;
+    conversionValidation: {
+        status: "passed" | "failed";
+        checks: {
+            textValuesMatch: boolean;
+            entityTypesMatch: boolean;
+            layersMatch: boolean;
+        };
+        differences: string[];
+        unpreservedObjectTypes: string[];
+    };
+    lossRisk: {
+        level: "severe" | "warning" | "none";
+        reasons: string[];
+    };
+    unpreservedObjectTypes: string[];
+    warnings: Warning[];
+    error?: undefined;
     bounds?: undefined;
     renderedEntityCount?: undefined;
 } | {
@@ -145,6 +221,10 @@ export declare function exportCad(args: {
     };
     renderedEntityCount: number;
     warnings: Warning[];
+    error?: undefined;
+    conversionValidation?: undefined;
+    lossRisk?: undefined;
+    unpreservedObjectTypes?: undefined;
 }>;
 export declare function apply(ctx: Context, config: Config): void;
 export {};

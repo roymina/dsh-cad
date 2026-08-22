@@ -15,3 +15,7 @@ coverage/
 # Operating-system files
 .DS_Store
 Thumbs.db
+
+# Markdown files (keep only the root README)
+*.md
+!README.md
