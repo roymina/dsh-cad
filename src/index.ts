@@ -260,6 +260,34 @@ function drawingPoints(entity: CadEntity): Array<{ x: number; y: number }> {
   return location ? [location] : []
 }
 
+type SvgRenderer = (entity: CadEntity, color: string) => string
+
+const svgRenderers: Record<string, SvgRenderer> = {
+  Line(entity, color) {
+    const a = point(entity.startPoint); const b = point(entity.endPoint)
+    return a && b ? `<line x1="${a.x}" y1="${-a.y}" x2="${b.x}" y2="${-b.y}" stroke="${color}"/>` : ''
+  },
+  LwPolyline: renderPolyline,
+  Polyline2D: renderPolyline,
+  Polyline3D: renderPolyline,
+  Circle(entity, color) {
+    const center = point(entity.center); const radius = Number(entity.radius ?? entity._radius)
+    return center && Number.isFinite(radius) ? `<circle cx="${center.x}" cy="${-center.y}" r="${radius}" fill="none" stroke="${color}"/>` : ''
+  },
+  TextEntity: renderText,
+  MText: renderText,
+}
+
+function renderPolyline(entity: CadEntity, color: string) {
+  const values = drawingPoints(entity).map(point => `${point.x},${-point.y}`).join(' ')
+  return values ? `<polyline points="${values}" fill="none" stroke="${color}"/>` : ''
+}
+
+function renderText(entity: CadEntity, color: string) {
+  const at = point(entity.insertPoint); const value = String(entity.value ?? entity._value ?? ''); const size = Number(entity.height ?? entity._height ?? 2.5)
+  return at ? `<text x="${at.x}" y="${-at.y}" font-size="${size}" fill="${color}">${escapeXml(value)}</text>` : ''
+}
+
 function makeSvg(document: CadDocument, selectedLayers?: string[], background = 'white') {
   const drawing = entities(document).filter(entity => !entity.isInvisible && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
   const points = drawing.flatMap(drawingPoints)
@@ -275,20 +303,7 @@ function makeSvg(document: CadDocument, selectedLayers?: string[], background = 
   for (const entity of drawing) {
     const color = '#202020'
     const kind = entityName(entity)
-    let primitive = ''
-    if (kind === 'Line') {
-      const a = point(entity.startPoint); const b = point(entity.endPoint)
-      primitive = a && b ? `<line x1="${a.x}" y1="${-a.y}" x2="${b.x}" y2="${-b.y}" stroke="${color}"/>` : ''
-    } else if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') {
-      const values = drawingPoints(entity).map(p => `${p.x},${-p.y}`).join(' ')
-      primitive = values ? `<polyline points="${values}" fill="none" stroke="${color}"/>` : ''
-    } else if (kind === 'Circle') {
-      const center = point(entity.center); const radius = Number(entity.radius ?? entity._radius)
-      primitive = center && Number.isFinite(radius) ? `<circle cx="${center.x}" cy="${-center.y}" r="${radius}" fill="none" stroke="${color}"/>` : ''
-    } else if (kind === 'TextEntity' || kind === 'MText') {
-      const at = point(entity.insertPoint); const value = String(entity.value ?? entity._value ?? ''); const size = Number(entity.height ?? entity._height ?? 2.5)
-      primitive = at ? `<text x="${at.x}" y="${-at.y}" font-size="${size}" fill="${color}">${escapeXml(value)}</text>` : ''
-    }
+    const primitive = svgRenderers[kind]?.(entity, color) ?? ''
     if (primitive) primitives.push(primitive)
     else unsupportedEntityTypes[kind] = (unsupportedEntityTypes[kind] ?? 0) + 1
   }
