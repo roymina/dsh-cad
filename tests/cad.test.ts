@@ -110,6 +110,19 @@ describe('DWG support', () => {
       await writeFile(path.join(existing, 'same.svg'), 'keep')
       await expect(exportCad({ path: fixture, format: 'svg', outputName: 'same' }, { ...config, outputDir: existing })).resolves.toMatchObject({ ok: false, error: { code: 'OUTPUT_EXISTS' } })
     } finally { await rm(existing, { recursive: true, force: true }) }
+    const controller = new AbortController(); controller.abort()
+    await expect(inspectCad(fixture, config, controller.signal)).resolves.toMatchObject({ ok: false, error: { code: 'CANCELLED' } })
+    await expect(inspectCad(fixture, { ...config, maxTotalVertices: 0 })).resolves.toMatchObject({ ok: false, error: { code: 'GEOMETRY_LIMIT_EXCEEDED' } })
+    await expect(exportCad({ path: fixture, format: 'png', width: 2000 }, { ...config, maxImagePixels: 100_000 })).resolves.toMatchObject({ ok: false, error: { code: 'RENDER_LIMIT_EXCEEDED' } })
+    const concurrentDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-cad-'))
+    try {
+      const results = await Promise.all([
+        exportCad({ path: fixture, format: 'svg', outputName: 'concurrent' }, { ...config, outputDir: concurrentDir }),
+        exportCad({ path: fixture, format: 'svg', outputName: 'concurrent' }, { ...config, outputDir: concurrentDir }),
+      ])
+      expect(results.filter(result => result.ok)).toHaveLength(1)
+      expect(results.filter(result => !result.ok && result.error.code === 'OUTPUT_EXISTS')).toHaveLength(1)
+    } finally { await rm(concurrentDir, { recursive: true, force: true }) }
   })
 
   it('renders closed bulge polylines as SVG arcs', async () => {

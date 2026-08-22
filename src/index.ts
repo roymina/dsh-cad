@@ -7,6 +7,7 @@ import { Worker } from 'node:worker_threads'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-tools'
 import { ACadVersion, CadUtils, DwgReader, DxfReader, DxfWriter, LayerFlags } from '@node-projects/acad-ts'
 import type { CadDocument as AcadCadDocument, Entity as AcadEntity } from '@node-projects/acad-ts'
 import { Resvg } from '@resvg/resvg-js'
@@ -57,7 +58,7 @@ type CadDocument = AcadCadDocument & Record<string, any>
 type Warning = { code: string; message: string }
 type WarningSummary = { total: number; byCode: Record<string, number>; samples: Warning[]; truncated: boolean }
 type CadResult = { document: CadDocument; inputPath: string; format: 'dwg' | 'dxf'; warnings: Warning[] }
-type ErrorResult = { ok: false; error: { code: string; message: string; details?: Record<string, any> } }
+type ErrorResult = { ok: false; error: { code: string; message: string; details?: Record<string, JsonValue> } }
 type SemanticSnapshot = { texts: string[]; entityTypes: Record<string, number>; layers: string[] }
 
 let activeJobs = 0
@@ -80,9 +81,14 @@ async function acquireJob(maxConcurrent: number, signal?: AbortSignal) {
 
 const text = (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }]
 const jsonOutput = { schema: { type: 'json' as const }, render: text }
+const asJson = (value: unknown): JsonValue => value as JsonValue
 
-function error(code: string, message: string, details?: Record<string, any>): ErrorResult {
+function error(code: string, message: string, details?: Record<string, JsonValue>): ErrorResult {
   return { ok: false, error: { code, message, ...(details ? { details } : {}) } }
+}
+
+function causeCode(cause: unknown) {
+  return cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string' ? cause.code : undefined
 }
 
 async function outputMetadata(filePath: string) {
@@ -146,9 +152,11 @@ function entityLayer(entity: CadEntity) {
   return entity.layer?.name ?? '0'
 }
 
-function point(value: any) {
-  return value && Number.isFinite(value.x) && Number.isFinite(value.y)
-    ? { x: Number(value.x), y: Number(value.y), z: Number(value.z ?? 0) }
+function point(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as { x?: unknown; y?: unknown; z?: unknown }
+  return Number.isFinite(candidate.x) && Number.isFinite(candidate.y)
+    ? { x: Number(candidate.x), y: Number(candidate.y), z: Number(candidate.z ?? 0) }
     : undefined
 }
 
@@ -193,8 +201,26 @@ function semanticSnapshot(document: CadDocument): SemanticSnapshot {
   return {
     texts: textValues,
     entityTypes,
-    layers: Array.from(document.layers ?? []).map((layer: any) => String(layer.name)).sort(),
+    layers: Array.from(document.layers ?? []).map(layer => String(layer.name)).sort(),
   }
+}
+
+function resourceLimitError(document: CadDocument, config: Config): ErrorResult | undefined {
+  const all = entities(document)
+  if (all.length > config.maxEntities) return error('ENTITY_LIMIT_EXCEEDED', 'The drawing exceeds the configured entity limit.', { entityCount: all.length, maxEntities: config.maxEntities })
+  const maxTextLength = config.maxTextLength === undefined ? 1_000_000 : config.maxTextLength
+  const oversizedText = all.find(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity)) && String(entity.value ?? '').length > maxTextLength)
+  if (oversizedText) return error('TEXT_LIMIT_EXCEEDED', 'The drawing contains text exceeding the configured length limit.', { maxTextLength, handle: oversizedText.handle })
+  const maxEntityVertices = config.maxEntityVertices === undefined ? 500_000 : config.maxEntityVertices
+  const maxTotalVertices = config.maxTotalVertices === undefined ? 5_000_000 : config.maxTotalVertices
+  let totalVertices = 0
+  for (const entity of all) {
+    const count = Array.isArray(entity.vertices) ? entity.vertices.length : 0
+    if (count > maxEntityVertices) return error('GEOMETRY_LIMIT_EXCEEDED', 'An entity exceeds the configured vertex limit.', { handle: entity.handle, vertices: count, maxEntityVertices })
+    totalVertices += count
+  }
+  if (totalVertices > maxTotalVertices) return error('GEOMETRY_LIMIT_EXCEEDED', 'The drawing exceeds the configured total vertex limit.', { totalVertices, maxTotalVertices })
+  return undefined
 }
 
 function equalRecords(left: Record<string, number>, right: Record<string, number>) {
@@ -221,7 +247,7 @@ function validateConversion(source: SemanticSnapshot, converted: SemanticSnapsho
 }
 
 function layerRows(document: CadDocument) {
-  return Array.from(document.layers ?? []).map((layer: any) => ({
+  return Array.from(document.layers ?? []).map(layer => ({
     name: layer.name,
     isOn: layer.isOn !== false,
     isFrozen: (layer.layerFlags & LayerFlags.Frozen) !== 0,
@@ -240,7 +266,7 @@ function bounds(document: CadDocument) {
 function entityBounds(document: CadDocument, source: CadEntity[] = entities(document)) {
   const unableTypes: Record<string, number> = {}
   const points = source.flatMap(entity => {
-    let box: any
+    let box: ReturnType<AcadEntity['getBoundingBox']>
     try { box = entity.getBoundingBox?.() } catch { const kind = entityName(entity); unableTypes[kind] = (unableTypes[kind] ?? 0) + 1; return [] }
     if (!box) { const kind = entityName(entity); unableTypes[kind] = (unableTypes[kind] ?? 0) + 1 }
     return [point(box?.min), point(box?.max)].filter(Boolean) as Array<{ x: number; y: number }>
@@ -251,8 +277,8 @@ function entityBounds(document: CadDocument, source: CadEntity[] = entities(docu
 
 function scopeStats(document: CadDocument) {
   const model = entities(document)
-  const paperSpaces = Array.from(document.layouts ?? []).filter((layout: any) => layout.isPaperSpace && layout.associatedBlock)
-    .map((layout: any) => ({ name: String(layout.name), entityCount: Array.from(layout.associatedBlock.entities ?? []).length }))
+  const paperSpaces = Array.from(document.layouts ?? []).filter(layout => layout.isPaperSpace && layout.associatedBlock)
+    .map(layout => ({ name: String(layout.name), entityCount: Array.from(layout.associatedBlock?.entities ?? []).length }))
   const references: Record<string, number> = {}
   let maxNestedDepth = 0
   let circularReferenceCount = 0
@@ -269,16 +295,16 @@ function scopeStats(document: CadDocument) {
     const name = String(entity.block?.name ?? 'UNKNOWN')
     references[name] = (references[name] ?? 0) + 1
     let depth = 1; let block = entity.block; const seen = new Set<string>()
-    while (block) { const name = String(block.name); if (seen.has(name)) { circularReferenceCount++; break }; seen.add(name); depth++; const nested = Array.from(block.entities ?? []).find((child: any) => entityName(child) === 'Insert') as any; block = nested?.block }
+    while (block) { const name = String(block.name); if (seen.has(name)) { circularReferenceCount++; break }; seen.add(name); depth++; const nested = Array.from(block.entities ?? []).find(child => entityName(child as CadEntity) === 'Insert') as CadEntity | undefined; block = nested?.block as typeof block }
     maxNestedDepth = Math.max(maxNestedDepth, depth)
   }
   const resources = {
-    xrefs: blocks(document).filter((block: any) => block.source || block.xrefFile || block.isXRef).length,
+    xrefs: blocks(document).filter(block => block.source || Boolean(block['xrefFile']) || Boolean(block['isXRef'])).length,
     images: Array.from(document.imageDefinitions ?? []).length,
     fonts: Array.from(document.textStyles ?? []).length,
     proxyEntities: model.filter(entity => (entity.proxyGeometries?.length ?? 0) > 0).length,
   }
-  return { modelSpace: { entityCount: model.length }, paperSpaces, blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length, referenceCount: references[String(block.name)] ?? 0 })), insertCount: Object.values(references).reduce((sum, count) => sum + count, 0), insertReferences: references, maxNestedDepth, circularReferenceCount, visibility, resources }
+  return { modelSpace: { entityCount: model.length }, paperSpaces, blocks: blocks(document).map(block => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length, referenceCount: references[String(block.name)] ?? 0 })), insertCount: Object.values(references).reduce((sum, count) => sum + count, 0), insertReferences: references, maxNestedDepth, circularReferenceCount, visibility, resources }
 }
 
 function geometryMetrics(document: CadDocument) {
@@ -301,7 +327,7 @@ function geometryMetrics(document: CadDocument) {
 function layerUsage(document: CadDocument) {
   const counts: Record<string, number> = {}
   for (const entity of entities(document)) counts[entityLayer(entity)] = (counts[entityLayer(entity)] ?? 0) + 1
-  const layers = Array.from(document.layers ?? []).map((layer: any) => ({ name: String(layer.name), entityCount: counts[String(layer.name)] ?? 0, empty: !counts[String(layer.name)] }))
+  const layers = Array.from(document.layers ?? []).map(layer => ({ name: String(layer.name), entityCount: counts[String(layer.name)] ?? 0, empty: !counts[String(layer.name)] }))
   return { layers, emptyLayers: layers.filter(layer => layer.empty).map(layer => layer.name) }
 }
 
@@ -329,10 +355,10 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
   let stat
   try {
     stat = await lstat(inputPath)
-  } catch (cause: any) {
-    if (cause?.code === 'EACCES' || cause?.code === 'EPERM') return error('PERMISSION_DENIED', 'The CAD file cannot be accessed.', { path: inputPath })
-    if (cause?.code === 'ENOENT') return error('FILE_NOT_FOUND', 'The CAD file does not exist.', { path: inputPath })
-    return error('READ_FAILED', 'The CAD path could not be inspected.', { path: inputPath, code: cause?.code })
+  } catch (cause: unknown) {
+    if (causeCode(cause) === 'EACCES' || causeCode(cause) === 'EPERM') return error('PERMISSION_DENIED', 'The CAD file cannot be accessed.', { path: inputPath })
+    if (causeCode(cause) === 'ENOENT') return error('FILE_NOT_FOUND', 'The CAD file does not exist.', { path: inputPath })
+    return error('READ_FAILED', 'The CAD path could not be inspected.', { path: inputPath, code: causeCode(cause) ?? null })
   }
   if (!stat.isFile()) return error('NOT_A_FILE', 'The CAD path must point to a regular file.', { path: inputPath })
   if (stat.size > config.maxFileSizeMB * 1024 * 1024) {
@@ -343,31 +369,24 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
   const warnings: Warning[] = []
   const cacheKey = `${inputPath}\u0000${stat.mtimeMs}\u0000${stat.size}`
   const cached = cadCache.get(cacheKey)
-  if (cached) { if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before using the cache.'); cadCache.delete(cacheKey); cadCache.set(cacheKey, cached); return cached }
+  if (cached) {
+    if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before using the cache.')
+    const limited = resourceLimitError(cached.document, config)
+    if (limited) return limited
+    cadCache.delete(cacheKey); cadCache.set(cacheKey, cached); return cached
+  }
   let release: (() => void) | undefined
   try {
     release = await acquireJob(config.maxConcurrent ?? 2, signal)
     const bytes = await readFile(inputPath)
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled while reading the drawing.')
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
-    const notify = (_sender: unknown, event: any) => warnings.push({ code: 'PARSER_WARNING', message: String(event?.message ?? event) })
+    const notify = (_sender: unknown, event: unknown) => warnings.push({ code: 'PARSER_WARNING', message: String(event && typeof event === 'object' && 'message' in event ? event.message : event) })
     const document = format === 'dwg'
       ? DwgReader.readFromStream(buffer, notify)
       : DxfReader.readFromStream(new Uint8Array(buffer), notify)
-    const entityCount = entities(document).length
-    if (entityCount > config.maxEntities) {
-      return error('ENTITY_LIMIT_EXCEEDED', 'The drawing exceeds the configured entity limit.', { entityCount, maxEntities: config.maxEntities })
-    }
-    const maxTextLength = config.maxTextLength ?? 1_000_000
-    const oversizedText = entities(document).find(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity)) && String(entity.value ?? '').length > maxTextLength)
-    if (oversizedText) return error('TEXT_LIMIT_EXCEEDED', 'The drawing contains text exceeding the configured length limit.', { maxTextLength, handle: oversizedText.handle })
-    let totalVertices = 0
-    for (const entity of entities(document)) {
-      const count = Array.isArray(entity.vertices) ? entity.vertices.length : 0
-      if (count > (config.maxEntityVertices ?? 500_000)) return error('GEOMETRY_LIMIT_EXCEEDED', 'An entity exceeds the configured vertex limit.', { handle: entity.handle, vertices: count, maxEntityVertices: config.maxEntityVertices ?? 500_000 })
-      totalVertices += count
-    }
-    if (totalVertices > (config.maxTotalVertices ?? 5_000_000)) return error('GEOMETRY_LIMIT_EXCEEDED', 'The drawing exceeds the configured total vertex limit.', { totalVertices, maxTotalVertices: config.maxTotalVertices ?? 5_000_000 })
+    const limited = resourceLimitError(document, config)
+    if (limited) return limited
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after parsing the drawing.')
     const result: CadResult = { document, inputPath, format: format as 'dwg' | 'dxf', warnings }
     cadCache.set(cacheKey, result)
@@ -399,7 +418,7 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     entityTypes: byType,
     layers: layerRows(document),
     entityCountByLayer: byLayer,
-    blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length, nestedBlocks: Array.from(block.entities ?? []).filter((entity: any) => entityName(entity) === 'Insert').map((entity: any) => entity.block?.name).filter(Boolean) })),
+    blocks: blocks(document).map(block => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length, nestedBlocks: Array.from(block.entities ?? []).filter(entity => entityName(entity as CadEntity) === 'Insert').map(entity => (entity as CadEntity).block?.name).filter(Boolean) })),
     scope: scopeStats(document),
     geometryMetrics: geometryMetrics(document),
     layerUsage: layerUsage(document),
@@ -418,9 +437,9 @@ function entityRecord(entity: CadEntity) {
   if (kind === 'Line') return { ...base, start: point(entity.startPoint), end: point(entity.endPoint) }
   if (kind === 'Circle') return { ...base, center: point(entity.center), radius: entity.radius ?? null }
   if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') {
-    return { ...base, vertices: Array.from(entity.vertices ?? []).map((vertex: any) => point(vertex.location ?? vertex)).filter(Boolean), closed: Boolean(entity.isClosed) }
+    return { ...base, vertices: Array.from(entity.vertices ?? []).map(vertex => point((vertex as CadEntity).location ?? vertex)).filter(Boolean), closed: Boolean(entity.isClosed) }
   }
-  if (kind === 'Insert') return { ...base, block: entity.block?.name ?? null, position: point(entity.insertPoint), rotation: entity.rotation ?? 0, scale: { x: entity.xScale ?? 1, y: entity.yScale ?? 1, z: entity.zScale ?? 1 }, attributes: Array.from(entity.attributes ?? []).map((attribute: any) => ({ tag: attribute.tag, text: attribute.value, position: point(attribute.insertPoint) })) }
+  if (kind === 'Insert') return { ...base, block: entity.block?.name ?? null, position: point(entity.insertPoint), rotation: entity.rotation ?? 0, scale: { x: entity.xScale ?? 1, y: entity.yScale ?? 1, z: entity.zScale ?? 1 }, attributes: Array.from(entity.attributes ?? []).map(attribute => ({ tag: (attribute as CadEntity).tag, text: (attribute as CadEntity).value, position: point((attribute as CadEntity).insertPoint) })) }
   return base
 }
 
@@ -437,12 +456,12 @@ function extract(document: CadDocument, section: string, layers: string[] | unde
     if (window) { const box = entity.getBoundingBox?.(); inWindow = Boolean(box && box.max.x >= window.minX && box.min.x <= window.maxX && box.max.y >= window.minY && box.min.y <= window.maxY) }
     return inWindow && (!normalizedLayers?.length || normalizedLayers.includes(entityLayer(entity).toLowerCase())) && (!normalizedTypes?.length || normalizedTypes.includes(entityName(entity).toLowerCase())) && (!normalizedSearch || text.includes(normalizedSearch)) && (!normalizedHandle || entityHandle === normalizedHandle)
   })
-  let source: any[] = section === 'texts' ? filtered.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity)))
-    : section === 'layers' ? Array.from(document.layers ?? [])
-    : section === 'blocks' ? blocks(document)
+  let source: CadEntity[] = section === 'texts' ? filtered.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity)))
+    : section === 'layers' ? Array.from(document.layers ?? []) as unknown as CadEntity[]
+    : section === 'blocks' ? blocks(document) as unknown as CadEntity[]
     : filtered
-  if (nearest) source = [...source].sort((a: any, b: any) => { const pa = point(a.insertPoint ?? a.location ?? a.center) ?? { x: 0, y: 0 }; const pb = point(b.insertPoint ?? b.location ?? b.center) ?? { x: 0, y: 0 }; return Math.hypot(pa.x - nearest.x, pa.y - nearest.y) - Math.hypot(pb.x - nearest.x, pb.y - nearest.y) })
-  const records = source.slice(offset, offset + limit).map((item: any) => section === 'layers'
+  if (nearest) source = [...source].sort((a, b) => { const pa = point(a.insertPoint ?? a.location ?? a.center) ?? { x: 0, y: 0 }; const pb = point(b.insertPoint ?? b.location ?? b.center) ?? { x: 0, y: 0 }; return Math.hypot(pa.x - nearest.x, pa.y - nearest.y) - Math.hypot(pb.x - nearest.x, pb.y - nearest.y) })
+  const records = source.slice(offset, offset + limit).map(item => section === 'layers'
     ? { name: item.name, isOn: item.isOn !== false, isFrozen: (item.layerFlags & LayerFlags.Frozen) !== 0, colorIndex: item.color?.index ?? null }
     : section === 'blocks' ? { name: item.name, entityCount: Array.from(item.entities ?? []).length }
     : entityRecord(item))
@@ -456,7 +475,7 @@ function escapeXml(value: string) {
 function drawingPoints(entity: CadEntity): Array<{ x: number; y: number }> {
   const kind = entityName(entity)
   if (kind === 'Line') return [point(entity.startPoint), point(entity.endPoint)].filter(Boolean) as Array<{ x: number; y: number }>
-  if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') return Array.from(entity.vertices ?? []).map((v: any) => point(v.location ?? v)).filter(Boolean) as Array<{ x: number; y: number }>
+  if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') return Array.from(entity.vertices ?? []).map(v => point((v as CadEntity).location ?? v)).filter(Boolean) as Array<{ x: number; y: number }>
   if (kind === 'Circle') {
     const center = point(entity.center); const radius = Number(entity.radius ?? 0)
     return center && Number.isFinite(radius) ? [{ x: center.x - radius, y: center.y - radius }, { x: center.x + radius, y: center.y + radius }] : []
@@ -626,7 +645,7 @@ function expandInsert(insert: CadEntity, maxDepth: number, maxInstances: number,
 
 function layoutEntities(document: CadDocument, layoutName?: string): CadEntity[] | undefined {
   if (!layoutName || layoutName.toLowerCase() === 'model') return entities(document)
-  const layout = Array.from(document.layouts ?? []).find((item: any) => String(item.name).toLowerCase() === layoutName.toLowerCase()) as CadEntity | undefined
+  const layout = Array.from(document.layouts ?? []).find(item => String(item.name).toLowerCase() === layoutName.toLowerCase())
   return layout ? Array.from(layout.associatedBlock?.entities ?? []) as CadEntity[] : undefined
 }
 
@@ -677,7 +696,7 @@ async function outputPath(config: Config, name: string, extension: string) {
   const realDir = await realpath(dir)
   const result = path.join(realDir, name.endsWith(`.${extension}`) ? name : `${name}.${extension}`)
   if (!result.startsWith(`${realDir}${path.sep}`)) throw new Error('Output path escapes outputDir.')
-  try { await lstat(result); const cause = new Error('Output file already exists; choose a different outputName.'); Object.assign(cause, { code: 'EEXIST' }); throw cause } catch (cause: any) { if (cause?.code !== 'ENOENT') throw cause }
+  try { await lstat(result); const cause = new Error('Output file already exists; choose a different outputName.'); Object.assign(cause, { code: 'EEXIST' }); throw cause } catch (cause: unknown) { if (!(cause && typeof cause === 'object' && 'code' in cause && cause.code === 'ENOENT')) throw cause }
   return result
 }
 
@@ -725,8 +744,8 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
     if (Buffer.byteLength(payload, 'utf8') > maxBytes) return error('OUTPUT_LIMIT_EXCEEDED', 'The report exceeds the configured byte limit.', { maxBytes })
     await writeFile(output, payload, { encoding: 'utf8', flag: 'wx' })
     return { ...result, outputPath: output, ...(await outputMetadata(output)) }
-  } catch (cause: any) {
-    return error(cause?.code === 'EEXIST' ? 'OUTPUT_EXISTS' : 'OUTPUT_FAILED', cause instanceof Error ? cause.message : String(cause))
+  } catch (cause: unknown) {
+    return error(causeCode(cause) === 'EEXIST' ? 'OUTPUT_EXISTS' : 'OUTPUT_FAILED', cause instanceof Error ? cause.message : String(cause))
   }
 }
 
@@ -761,8 +780,8 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
           write: (value: Uint8Array) => { fileStream.write(value) },
           flush: () => {},
           close: () => { fileStream.end() },
-        }, loaded.document as any, true, undefined, (_sender: unknown, event: any) => {
-          conversionWarnings.push({ code: 'DXF_WRITER_WARNING', message: String(event?.message ?? event) })
+        }, loaded.document, true, undefined, (_sender: unknown, event: unknown) => {
+          conversionWarnings.push({ code: 'DXF_WRITER_WARNING', message: String(event && typeof event === 'object' && 'message' in event ? event.message : event) })
         })
         await finished(fileStream)
       } catch (cause) {
@@ -840,8 +859,8 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       unsupportedEntityTypes: drawing.unsupportedEntityTypes, previewCompleteness: drawing.previewCompleteness,
       warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
     }
-  } catch (cause: any) {
-    return error(cause?.code === 'EEXIST' ? 'OUTPUT_EXISTS' : 'EXPORT_FAILED', cause instanceof Error ? cause.message : String(cause))
+  } catch (cause: unknown) {
+    return error(causeCode(cause) === 'EEXIST' ? 'OUTPUT_EXISTS' : 'EXPORT_FAILED', cause instanceof Error ? cause.message : String(cause))
   }
 }
 
@@ -849,7 +868,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.tools.register(defineTool({
     name: 'cad_inspect', description: 'Inspect a DWG or DXF drawing without modifying it. Returns file metadata, units, bounds, layers, blocks and entity statistics.',
     parameters: { path: { type: 'string', required: true, description: 'Absolute or working-directory-relative DWG/DXF path.' } }, output: jsonOutput,
-    async execute(args, exec) { return inspectCad(args.path, config, exec.signal) as any },
+    async execute(args, exec) { return asJson(await inspectCad(args.path, config, exec.signal)) },
   }))
   ctx.tools.register(defineTool({
     name: 'cad_extract', description: 'Extract texts, layers, blocks, or entities from a DWG/DXF drawing. Optionally write JSON or CSV below the configured output directory.',
@@ -859,7 +878,7 @@ export function apply(ctx: Context, config: Config) {
       layers: { type: 'array', items: { type: 'string' }, description: 'Optional layer-name filter.' }, entityTypes: { type: 'array', items: { type: 'string' }, description: 'Optional entity-type filter.' },
       limit: { type: 'integer', description: 'Maximum records to return (default 500).' }, offset: { type: 'integer', description: 'Number of matching records to skip.' }, search: { type: 'string', description: 'Case-insensitive text search.' }, handle: { type: 'string', description: 'Exact entity Handle, decimal or hexadecimal.' }, window: { type: 'object', additionalProperties: true, description: 'Optional spatial window with minX/minY/maxX/maxY.' }, nearest: { type: 'object', additionalProperties: true, description: 'Optional nearest-point query with x/y.' }, summary: { type: 'boolean', description: 'Return counts and truncation without records.' }, saveAs: { type: 'string', enum: ['json', 'csv'], description: 'Optional file format for a saved report.' }, outputName: { type: 'string', description: 'Output filename only; directories are not allowed.' },
     }, output: jsonOutput,
-    async execute(args, exec) { return extractCad(args as any, config, exec.signal) as any },
+    async execute(args, exec) { return asJson(await extractCad(args as Parameters<typeof extractCad>[0], config, exec.signal)) },
   }))
   ctx.tools.register(defineTool({
     name: 'cad_export', description: 'Export a DWG/DXF drawing as a simple SVG or PNG preview, or convert it to DXF. The source file is never changed.',
@@ -868,6 +887,6 @@ export function apply(ctx: Context, config: Config) {
       format: { type: 'string', required: true, enum: ['svg', 'png', 'dxf'], description: 'Export format.' }, outputName: { type: 'string', description: 'Output filename only; directories are not allowed.' },
       layers: { type: 'array', items: { type: 'string' }, description: 'Optional layer-name filter for SVG/PNG.' }, layout: { type: 'string', description: 'Model (default) or a Paper Space layout name for SVG/PNG.' }, width: { type: 'integer', description: 'PNG width in pixels; must be at least 1 and within the configured maximum.' }, height: { type: 'integer', description: 'Alternative PNG height in pixels; must be at least 1, within the configured maximum, and cannot be combined with width.' }, background: { type: 'string', description: 'SVG/PNG background: transparent, a supported named color, or #RGB/#RRGGBB/#RRGGBBAA.' },
     }, output: jsonOutput,
-    async execute(args, exec) { return exportCad(args as any, config, exec.signal) as any },
+    async execute(args, exec) { return asJson(await exportCad(args as Parameters<typeof exportCad>[0], config, exec.signal)) },
   }))
 }
