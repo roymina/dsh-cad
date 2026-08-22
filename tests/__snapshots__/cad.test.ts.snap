@@ -1,0 +1,28 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`DWG support > keeps SVG and PNG preview structure stable 1`] = `
+{
+  "hasRgbColor": true,
+  "hasTextAlignment": true,
+  "tags": {
+    "g": 1,
+    "line": 136,
+    "path": 422,
+    "polygon": 7,
+    "rect": 1,
+    "text": 141,
+  },
+  "unsupported": {
+    "RasterImage": 23,
+    "Wipeout": 4,
+  },
+  "viewBox": "35378335.93267829 -10061587.95661971 177503758.94824237 7083215.421361351",
+}
+`;
+
+exports[`DWG support > keeps SVG and PNG preview structure stable 2`] = `
+{
+  "byteLength": 122,
+  "signature": "89504e470d0a1a0a",
+}
+`;

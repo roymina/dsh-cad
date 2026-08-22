@@ -107,4 +107,30 @@ describe('DWG support', () => {
       if (result.ok) expect(await readFile(result.outputPath, 'utf8')).toMatch(/<path[^>]+ A /)
     } finally { await rm(outputDir, { recursive: true, force: true }) }
   })
+
+  it('keeps SVG and PNG preview structure stable', async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-cad-'))
+    const config = { outputDir, maxFileSizeMB: 50, maxEntities: 200_000, maxExtractItems: 10_000, maxImageDimension: 8192 }
+    try {
+      const svg = await exportCad({ path: secondFixture, format: 'svg', outputName: 'visual.svg' }, config)
+      const png = await exportCad({ path: secondFixture, format: 'png', outputName: 'visual.png', width: 320 }, config)
+      expect(svg.ok).toBe(true)
+      expect(png.ok).toBe(true)
+      if (svg.ok) {
+        const source = await readFile(svg.outputPath, 'utf8')
+        const tags = [...source.matchAll(/<([a-z]+)\b/g)].map(match => match[1]).filter(tag => tag !== 'svg')
+        expect({
+          viewBox: source.match(/viewBox="([^"]+)"/)?.[1],
+          tags: Object.fromEntries([...new Set(tags)].sort().map(tag => [tag, tags.filter(value => value === tag).length])),
+          hasRgbColor: source.includes('stroke="rgb('),
+          hasTextAlignment: source.includes('text-anchor=') && source.includes('alignment-baseline='),
+          unsupported: svg.unsupportedEntityTypes,
+        }).toMatchSnapshot()
+      }
+      if (png.ok) {
+        const bytes = await readFile(png.outputPath)
+        expect({ signature: bytes.subarray(0, 8).toString('hex'), byteLength: bytes.length }).toMatchSnapshot()
+      }
+    } finally { await rm(outputDir, { recursive: true, force: true }) }
+  }, 30_000)
 })
