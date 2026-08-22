@@ -22,6 +22,8 @@ export interface Config {
   maxWarningSamples?: number
   maxBlockDepth?: number
   maxBlockInstances?: number
+  maxConcurrent?: number
+  allowedInputRoots?: string[]
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -34,6 +36,8 @@ export const Config: Schema<Config> = Schema.object({
   maxWarningSamples: Schema.number().default(50),
   maxBlockDepth: Schema.number().default(16),
   maxBlockInstances: Schema.number().default(10_000),
+  maxConcurrent: Schema.number().default(2),
+  allowedInputRoots: Schema.array(Schema.string()),
 })
 
 type CadEntity = AcadEntity & Record<string, any>
@@ -43,6 +47,22 @@ type WarningSummary = { total: number; byCode: Record<string, number>; samples: 
 type CadResult = { document: CadDocument; inputPath: string; format: 'dwg' | 'dxf'; warnings: Warning[] }
 type ErrorResult = { ok: false; error: { code: string; message: string; details?: Record<string, any> } }
 type SemanticSnapshot = { texts: string[]; entityTypes: Record<string, number>; layers: string[] }
+
+let activeJobs = 0
+const queuedJobs: Array<() => void> = []
+
+async function acquireJob(maxConcurrent: number, signal?: AbortSignal) {
+  const limit = Math.max(1, Math.floor(maxConcurrent || 1))
+  if (activeJobs < limit) { activeJobs++; return () => { activeJobs--; queuedJobs.shift()?.() } }
+  await new Promise<void>((resolve, reject) => {
+    const resume = () => { signal?.removeEventListener('abort', cancel); resolve() }
+    const cancel = () => { const index = queuedJobs.indexOf(resume); if (index >= 0) queuedJobs.splice(index, 1); reject(new Error('CANCELLED')) }
+    if (signal?.aborted) return cancel()
+    queuedJobs.push(resume); signal?.addEventListener('abort', cancel, { once: true })
+  })
+  activeJobs++
+  return () => { activeJobs--; queuedJobs.shift()?.() }
+}
 
 const text = (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }]
 const jsonOutput = { schema: { type: 'json' as const }, render: text }
@@ -223,11 +243,19 @@ function scopeStats(document: CadDocument) {
 async function loadCad(input: string, config: Config, signal?: AbortSignal): Promise<CadResult | ReturnType<typeof error>> {
   if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before reading the drawing.')
   const inputPath = path.resolve(input)
+  const roots = config.allowedInputRoots?.map(root => path.resolve(root))
+  if (roots?.length) {
+    const candidate = await realpath(inputPath).catch(() => inputPath)
+    const allowed = roots.some(root => candidate === root || candidate.startsWith(`${root}${path.sep}`))
+    if (!allowed) return error('INPUT_OUTSIDE_ALLOWED_ROOTS', 'The CAD path is outside the configured input roots.', { path: inputPath, allowedInputRoots: roots })
+  }
   let stat
   try {
     stat = await lstat(inputPath)
-  } catch {
-    return error('FILE_NOT_FOUND', 'The CAD file does not exist.', { path: inputPath })
+  } catch (cause: any) {
+    if (cause?.code === 'EACCES' || cause?.code === 'EPERM') return error('PERMISSION_DENIED', 'The CAD file cannot be accessed.', { path: inputPath })
+    if (cause?.code === 'ENOENT') return error('FILE_NOT_FOUND', 'The CAD file does not exist.', { path: inputPath })
+    return error('READ_FAILED', 'The CAD path could not be inspected.', { path: inputPath, code: cause?.code })
   }
   if (!stat.isFile()) return error('NOT_A_FILE', 'The CAD path must point to a regular file.', { path: inputPath })
   if (stat.size > config.maxFileSizeMB * 1024 * 1024) {
@@ -236,8 +264,11 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
   const format = path.extname(inputPath).toLowerCase().slice(1)
   if (format !== 'dwg' && format !== 'dxf') return error('UNSUPPORTED_FORMAT', 'Only DWG and DXF input files are supported.', { path: inputPath })
   const warnings: Warning[] = []
+  let release: (() => void) | undefined
   try {
+    release = await acquireJob(config.maxConcurrent ?? 2, signal)
     const bytes = await readFile(inputPath)
+    if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled while reading the drawing.')
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
     const notify = (_sender: unknown, event: any) => warnings.push({ code: 'PARSER_WARNING', message: String(event?.message ?? event) })
     const document = format === 'dwg'
@@ -247,10 +278,12 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
     if (entityCount > config.maxEntities) {
       return error('ENTITY_LIMIT_EXCEEDED', 'The drawing exceeds the configured entity limit.', { entityCount, maxEntities: config.maxEntities })
     }
+    if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after parsing the drawing.')
     return { document, inputPath, format, warnings }
   } catch (cause) {
+    if (cause instanceof Error && cause.message === 'CANCELLED') return error('CANCELLED', 'Operation was cancelled.')
     return error('PARSE_FAILED', 'The CAD drawing could not be parsed.', { path: inputPath, message: cause instanceof Error ? cause.message : String(cause) })
-  }
+  } finally { release?.() }
 }
 
 function inspect(document: CadDocument, inputPath: string, format: string, warnings: Warning[], maxWarningSamples: number) {

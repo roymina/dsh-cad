@@ -98,6 +98,7 @@ describe('DWG support', () => {
     await expect(exportCad({ path: fixture, format: 'png', width: 0 }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'png', width: 2000, outputName: '../preview' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'svg', layout: 'missing-layout' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'LAYOUT_NOT_FOUND' } })
+    await expect(inspectCad(fixture, { ...config, allowedInputRoots: [os.tmpdir()] })).resolves.toMatchObject({ ok: false, error: { code: 'INPUT_OUTSIDE_ALLOWED_ROOTS' } })
   })
 
   it('renders closed bulge polylines as SVG arcs', async () => {

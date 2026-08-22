@@ -12,6 +12,8 @@ export interface Config {
     maxWarningSamples?: number;
     maxBlockDepth?: number;
     maxBlockInstances?: number;
+    maxConcurrent?: number;
+    allowedInputRoots?: string[];
 }
 export declare const Config: Schema<Config>;
 type Warning = {
