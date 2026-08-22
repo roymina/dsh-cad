@@ -362,18 +362,26 @@ function entityRecord(entity: CadEntity) {
   return base
 }
 
-function extract(document: CadDocument, section: string, layers: string[] | undefined, entityTypes: string[] | undefined, limit: number) {
+function extract(document: CadDocument, section: string, layers: string[] | undefined, entityTypes: string[] | undefined, limit: number, offset = 0, search?: string, handle?: string) {
   const all = entities(document)
-  const filtered = all.filter(entity => (!layers?.length || layers.includes(entityLayer(entity))) && (!entityTypes?.length || entityTypes.includes(entityName(entity))))
+  const normalizedLayers = layers?.map(value => value.toLowerCase())
+  const normalizedTypes = entityTypes?.map(value => value.toLowerCase())
+  const normalizedSearch = search?.toLowerCase()
+  const normalizedHandle = handle?.toLowerCase().replace(/^0x/, '')
+  const filtered = all.filter(entity => {
+    const text = String(entity.value ?? '').toLowerCase()
+    const entityHandle = entity.handle == null ? '' : Number(entity.handle).toString(16).toLowerCase()
+    return (!normalizedLayers?.length || normalizedLayers.includes(entityLayer(entity).toLowerCase())) && (!normalizedTypes?.length || normalizedTypes.includes(entityName(entity).toLowerCase())) && (!normalizedSearch || text.includes(normalizedSearch)) && (!normalizedHandle || entityHandle === normalizedHandle)
+  })
   const source = section === 'texts' ? filtered.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity)))
     : section === 'layers' ? Array.from(document.layers ?? [])
     : section === 'blocks' ? blocks(document)
     : filtered
-  const records = source.slice(0, limit).map((item: any) => section === 'layers'
+  const records = source.slice(offset, offset + limit).map((item: any) => section === 'layers'
     ? { name: item.name, isOn: item.isOn !== false, isFrozen: (item.layerFlags & LayerFlags.Frozen) !== 0, colorIndex: item.color?.index ?? null }
     : section === 'blocks' ? { name: item.name, entityCount: Array.from(item.entities ?? []).length }
     : entityRecord(item))
-  return { ok: true, section, total: source.length, returned: records.length, truncated: records.length < source.length, records }
+  return { ok: true, section, offset, total: source.length, returned: records.length, truncated: offset + records.length < source.length, records }
 }
 
 function escapeXml(value: string) {
@@ -626,14 +634,15 @@ export async function inspectCad(pathValue: string, config: Config, signal?: Abo
   return inspect(loaded.document, loaded.inputPath, loaded.format, loaded.warnings, config.maxWarningSamples ?? 50)
 }
 
-export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean }, config: Config, signal?: AbortSignal) {
+export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; offset?: number; search?: string; handle?: string; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean }, config: Config, signal?: AbortSignal) {
   const invalid = invalidPath(args.path)
   if (invalid) return invalid
   if (args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 0)) return error('INVALID_ARGUMENT', 'limit must be a non-negative integer.')
+  if (args.offset !== undefined && (!Number.isInteger(args.offset) || args.offset < 0)) return error('INVALID_ARGUMENT', 'offset must be a non-negative integer.')
   if (args.outputName !== undefined && !validOutputName(args.outputName)) return error('INVALID_ARGUMENT', 'outputName must be a non-empty filename without path segments or reserved characters.')
   const loaded = await loadCad(args.path, config, signal)
   if (isErrorResult(loaded)) return loaded
-  const result = extract(loaded.document, args.section, args.layers, args.entityTypes, Math.min(args.limit ?? config.maxExtractItems, config.maxExtractItems))
+  const result = extract(loaded.document, args.section, args.layers, args.entityTypes, Math.min(args.limit ?? config.maxExtractItems, config.maxExtractItems), args.offset ?? 0, args.search, args.handle)
   if (!args.saveAs) return result
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-${args.section}`, args.saveAs)
@@ -766,7 +775,7 @@ export function apply(ctx: Context, config: Config) {
       path: { type: 'string', required: true, description: 'Absolute or working-directory-relative DWG/DXF path.' },
       section: { type: 'string', required: true, enum: ['texts', 'layers', 'blocks', 'entities'], description: 'Information section to extract.' },
       layers: { type: 'array', items: { type: 'string' }, description: 'Optional layer-name filter.' }, entityTypes: { type: 'array', items: { type: 'string' }, description: 'Optional entity-type filter.' },
-      limit: { type: 'integer', description: 'Maximum records to return.' }, saveAs: { type: 'string', enum: ['json', 'csv'], description: 'Optional file format for a saved report.' }, outputName: { type: 'string', description: 'Output filename only; directories are not allowed.' },
+      limit: { type: 'integer', description: 'Maximum records to return.' }, offset: { type: 'integer', description: 'Number of matching records to skip.' }, search: { type: 'string', description: 'Case-insensitive text search.' }, handle: { type: 'string', description: 'Exact entity Handle, decimal or hexadecimal.' }, saveAs: { type: 'string', enum: ['json', 'csv'], description: 'Optional file format for a saved report.' }, outputName: { type: 'string', description: 'Output filename only; directories are not allowed.' },
     }, output: jsonOutput,
     async execute(args, exec) { return extractCad(args as any, config, exec.signal) as any },
   }))

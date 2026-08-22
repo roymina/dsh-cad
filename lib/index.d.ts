@@ -132,12 +132,16 @@ export declare function extractCad(args: {
     layers?: string[];
     entityTypes?: string[];
     limit?: number;
+    offset?: number;
+    search?: string;
+    handle?: string;
     saveAs?: 'json' | 'csv';
     outputName?: string;
     bom?: boolean;
 }, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
     ok: boolean;
     section: string;
+    offset: number;
     total: number;
     returned: number;
     truncated: boolean;
@@ -166,6 +170,7 @@ export declare function extractCad(args: {
     outputPath: string;
     ok: boolean;
     section: string;
+    offset: number;
     total: number;
     returned: number;
     truncated: boolean;

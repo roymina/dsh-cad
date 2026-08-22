@@ -94,6 +94,7 @@ describe('DWG support', () => {
   it('rejects invalid runtime arguments', async () => {
     const config = { outputDir: '.', maxFileSizeMB: 50, maxEntities: 200_000, maxExtractItems: 10_000, maxImageDimension: 8192, maxImagePixels: 1_000_000 }
     await expect(extractCad({ path: fixture, section: 'texts', limit: -1 }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
+    await expect(extractCad({ path: fixture, section: 'texts', offset: -1 }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'svg', background: 'url(https://example.test)' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'png', width: 0 }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
     await expect(exportCad({ path: fixture, format: 'png', width: 2000, outputName: '../preview' }, config)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } })
