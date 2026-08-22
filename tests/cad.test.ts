@@ -31,6 +31,7 @@ describe('DWG support', () => {
         const document = await readFile(svg.outputPath, 'utf8')
         const svgPrimitiveCount = (document.match(/<(?:line|polyline|polygon|circle|path|text)\b/g) ?? []).length
         expect(svg.renderedPrimitiveCount).toBe(svgPrimitiveCount)
+        expect(document).toMatch(/<text[^>]+text-anchor=[^>]+alignment-baseline=/)
         expect(svg.sourceEntityCount).toBe(svg.renderedPrimitiveCount + Object.values(svg.unsupportedEntityTypes).reduce((sum, count) => sum + count, 0))
         expect(svg.previewCompleteness).toBe(svg.renderedPrimitiveCount / svg.sourceEntityCount)
         expect(svg.unsupportedEntityTypes.Insert ?? 0).toBe(0)
