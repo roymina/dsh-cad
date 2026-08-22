@@ -189,7 +189,7 @@ export declare function exportCad(args: {
         unpreservedObjectTypes: string[];
     };
     lossRisk: {
-        level: "severe" | "warning" | "none";
+        level: "none" | "severe" | "warning";
         reasons: string[];
     };
     unpreservedObjectTypes: string[];
@@ -214,7 +214,7 @@ export declare function exportCad(args: {
         unpreservedObjectTypes: string[];
     };
     lossRisk: {
-        level: "severe" | "warning" | "none";
+        level: "none" | "severe" | "warning";
         reasons: string[];
     };
     unpreservedObjectTypes: string[];

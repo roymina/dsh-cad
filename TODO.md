@@ -18,7 +18,7 @@
 
 - [x] 2.1 评估并封装 `@node-projects/acad-ts` 自带的 `SvgWriter`（含 Arc、Ellipse、Hatch、Insert、Dimension、颜色、线型、文字转换）；不满足则建立按实体类型分派的 renderer，而非在单个 `map` 中继续追加条件。
 - [x] 2.2 支持 Insert 展开：平移、旋转、缩放、阵列、嵌套块与循环引用深度限制。
-- [ ] 2.3 支持 Arc、Ellipse、Spline、Hatch。
+- [x] 2.3 支持 Arc、Ellipse、Spline、Hatch。
 - [ ] 2.4 支持 Dimension、Leader、MLeader、RasterImage、Wipeout、Solid、Point、Mesh，或显式分类为不支持（不允许静默遗漏）。
 - [ ] 2.5 支持块属性与纸空间（Paper Space / Layout）内容。
 - [ ] 2.6 修复闭合折线真正闭合、Polyline bulge 弧段按弧绘制（不再画成直线）。

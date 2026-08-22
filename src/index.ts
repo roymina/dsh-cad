@@ -278,6 +278,10 @@ const svgRenderers: Record<string, SvgRenderer> = {
     const center = point(entity.center); const radius = Number(entity.radius ?? entity._radius)
     return center && Number.isFinite(radius) ? `<circle cx="${center.x}" cy="${-center.y}" r="${radius}" fill="none" stroke="${color}"/>` : ''
   },
+  Arc: renderCurve,
+  Ellipse: renderCurve,
+  Spline: renderCurve,
+  Hatch: renderHatch,
   TextEntity: renderText,
   MText: renderText,
 }
@@ -290,6 +294,22 @@ function renderPolyline(entity: CadEntity, color: string) {
 function renderText(entity: CadEntity, color: string) {
   const at = point(entity.insertPoint); const value = String(entity.value ?? entity._value ?? ''); const size = Number(entity.height ?? entity._height ?? 2.5)
   return at ? `<text x="${at.x}" y="${-at.y}" font-size="${size}" fill="${color}">${escapeXml(value)}</text>` : ''
+}
+
+function svgPath(points: unknown[], closed = false) {
+  const values = points.map(point).filter(Boolean) as Array<{ x: number; y: number }>
+  return values.length > 1 ? `M ${values.map((value, index) => `${index === 0 ? '' : 'L '}${value.x} ${-value.y}`).join(' ')}${closed ? ' Z' : ''}` : ''
+}
+
+function renderCurve(entity: CadEntity, color: string) {
+  const points = entity.polygonalVertexes?.(96) ?? entity.tryPolygonalVertexes?.(96)?.points ?? []
+  const path = svgPath(points, Boolean(entity.isClosed))
+  return path ? `<path d="${path}" fill="none" stroke="${color}"/>` : ''
+}
+
+function renderHatch(entity: CadEntity, color: string) {
+  const path = (entity.paths ?? []).map((boundary: CadEntity) => svgPath(boundary.getPoints?.(96) ?? [], true)).filter(Boolean).join(' ')
+  return path ? `<path d="${path}" fill="${entity.isSolid ? color : 'none'}" fill-rule="evenodd" stroke="${color}"/>` : ''
 }
 
 function hasCircularBlockReference(block: CadEntity, blockStack = new Set<string>()): boolean {
