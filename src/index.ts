@@ -19,6 +19,8 @@ export interface Config {
   maxImageDimension: number
   maxImagePixels?: number
   maxWarningSamples?: number
+  maxBlockDepth?: number
+  maxBlockInstances?: number
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -29,6 +31,8 @@ export const Config: Schema<Config> = Schema.object({
   maxImageDimension: Schema.number().default(8192),
   maxImagePixels: Schema.number().default(64_000_000),
   maxWarningSamples: Schema.number().default(50),
+  maxBlockDepth: Schema.number().default(16),
+  maxBlockInstances: Schema.number().default(10_000),
 })
 
 type CadEntity = Record<string, any>
@@ -288,8 +292,44 @@ function renderText(entity: CadEntity, color: string) {
   return at ? `<text x="${at.x}" y="${-at.y}" font-size="${size}" fill="${color}">${escapeXml(value)}</text>` : ''
 }
 
-function makeSvg(document: CadDocument, selectedLayers?: string[], background = 'white') {
-  const drawing = entities(document).filter(entity => !entity.isInvisible && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
+function hasCircularBlockReference(block: CadEntity, blockStack = new Set<string>()): boolean {
+  const blockName = String(block?.name ?? '')
+  if (!blockName || blockStack.has(blockName)) return true
+  const nextStack = new Set(blockStack).add(blockName)
+  const childEntities = Array.from(block.entities ?? []) as CadEntity[]
+  return childEntities.some(entity => entityName(entity) === 'Insert' && hasCircularBlockReference(entity.block, nextStack))
+}
+
+function expandInsert(insert: CadEntity, maxDepth: number, maxInstances: number, depth = 0, blockStack = new Set<string>()): CadEntity[] {
+  const blockName = String(insert.block?.name ?? '')
+  if (!blockName || depth >= maxDepth || blockStack.has(blockName) || hasCircularBlockReference(insert.block)) return []
+  const nextStack = new Set(blockStack).add(blockName)
+  const rows = Math.max(1, Number(insert.rowCount ?? 1))
+  const columns = Math.max(1, Number(insert.columnCount ?? 1))
+  const total = Math.min(rows * columns, maxInstances)
+  const expanded: CadEntity[] = []
+  for (let index = 0; index < total; index++) {
+    const row = Math.floor(index / columns)
+    const column = index % columns
+    const instance = insert.clone() as CadEntity
+    const rotation = Number(instance.rotation ?? 0)
+    const localX = column * Number(instance.columnSpacing ?? 0) * Number(instance.xScale ?? 1)
+    const localY = row * Number(instance.rowSpacing ?? 0) * Number(instance.yScale ?? 1)
+    const insertPoint = instance.insertPoint
+    insertPoint.x += localX * Math.cos(rotation) - localY * Math.sin(rotation)
+    insertPoint.y += localX * Math.sin(rotation) + localY * Math.cos(rotation)
+    for (const entity of instance.explode() as Iterable<CadEntity>) {
+      if (entityName(entity) === 'Insert') expanded.push(...expandInsert(entity, maxDepth, maxInstances - expanded.length, depth + 1, nextStack))
+      else expanded.push(entity)
+      if (expanded.length >= maxInstances) return expanded
+    }
+  }
+  return expanded
+}
+
+function makeSvg(document: CadDocument, selectedLayers?: string[], background = 'white', maxBlockDepth = 16, maxBlockInstances = 10_000) {
+  const source = entities(document).filter(entity => !entity.isInvisible && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
+  const drawing = source.flatMap(entity => entityName(entity) === 'Insert' ? expandInsert(entity, maxBlockDepth, maxBlockInstances) : [entity])
   const points = drawing.flatMap(drawingPoints)
   const declared = bounds(document)
   const minX = declared?.min.x ?? Math.min(...points.map(p => p.x), 0)
@@ -431,7 +471,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
         warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
       }
     }
-    const drawing = makeSvg(loaded.document, args.layers, args.background)
+    const drawing = makeSvg(loaded.document, args.layers, args.background, config.maxBlockDepth ?? 16, config.maxBlockInstances ?? 10_000)
     if (args.format === 'svg') await writeFile(output, drawing.svg, 'utf8')
     else {
       const drawingWidth = drawing.bounds.max.x - drawing.bounds.min.x

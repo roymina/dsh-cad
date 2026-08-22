@@ -10,6 +10,8 @@ export interface Config {
     maxImageDimension: number;
     maxImagePixels?: number;
     maxWarningSamples?: number;
+    maxBlockDepth?: number;
+    maxBlockInstances?: number;
 }
 export declare const Config: Schema<Config>;
 type Warning = {

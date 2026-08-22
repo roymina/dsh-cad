@@ -32,6 +32,7 @@ describe('DWG support', () => {
         expect(svg.renderedPrimitiveCount).toBe(svgPrimitiveCount)
         expect(svg.sourceEntityCount).toBe(svg.renderedPrimitiveCount + Object.values(svg.unsupportedEntityTypes).reduce((sum, count) => sum + count, 0))
         expect(svg.previewCompleteness).toBe(svg.renderedPrimitiveCount / svg.sourceEntityCount)
+        expect(svg.unsupportedEntityTypes.Insert ?? 0).toBe(0)
       }
       const dxf = await exportCad({ path: secondFixture, format: 'dxf', outputName: 'second.dxf' }, config)
       expect(dxf.ok).toBe(true)
