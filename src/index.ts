@@ -60,6 +60,8 @@ type SemanticSnapshot = { texts: string[]; entityTypes: Record<string, number>; 
 
 let activeJobs = 0
 const queuedJobs: Array<() => void> = []
+const cadCache = new Map<string, CadResult>()
+const maxCadCacheEntries = 4
 
 async function acquireJob(maxConcurrent: number, signal?: AbortSignal) {
   const limit = Math.max(1, Math.floor(maxConcurrent || 1))
@@ -274,6 +276,9 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
   const format = path.extname(inputPath).toLowerCase().slice(1)
   if (format !== 'dwg' && format !== 'dxf') return error('UNSUPPORTED_FORMAT', 'Only DWG and DXF input files are supported.', { path: inputPath })
   const warnings: Warning[] = []
+  const cacheKey = `${inputPath}\u0000${stat.mtimeMs}\u0000${stat.size}`
+  const cached = cadCache.get(cacheKey)
+  if (cached) { if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before using the cache.'); cadCache.delete(cacheKey); cadCache.set(cacheKey, cached); return cached }
   let release: (() => void) | undefined
   try {
     release = await acquireJob(config.maxConcurrent ?? 2, signal)
@@ -299,7 +304,10 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
     }
     if (totalVertices > (config.maxTotalVertices ?? 5_000_000)) return error('GEOMETRY_LIMIT_EXCEEDED', 'The drawing exceeds the configured total vertex limit.', { totalVertices, maxTotalVertices: config.maxTotalVertices ?? 5_000_000 })
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after parsing the drawing.')
-    return { document, inputPath, format, warnings }
+    const result: CadResult = { document, inputPath, format: format as 'dwg' | 'dxf', warnings }
+    cadCache.set(cacheKey, result)
+    while (cadCache.size > maxCadCacheEntries) cadCache.delete(cadCache.keys().next().value as string)
+    return result
   } catch (cause) {
     if (cause instanceof Error && cause.message === 'CANCELLED') return error('CANCELLED', 'Operation was cancelled.')
     return error('PARSE_FAILED', 'The CAD drawing could not be parsed.', { path: inputPath, message: cause instanceof Error ? cause.message : String(cause) })
