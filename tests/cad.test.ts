@@ -39,6 +39,11 @@ describe('DWG support', () => {
       expect(sourceTexts.ok).toBe(true)
       const dxf = await exportCad({ path: fixture, format: 'dxf', outputName: 'fixture.dxf' }, config)
       expect(dxf.ok).toBe(true)
+      if (dxf.ok) {
+        expect(dxf.conversionValidation).toEqual(expect.objectContaining({ status: 'passed' }))
+        expect(dxf.lossRisk).toEqual(expect.objectContaining({ level: 'none' }))
+        expect(dxf.unpreservedObjectTypes).toEqual([])
+      }
       if (dxf.ok) expect((await readFile(dxf.outputPath, 'utf8')).includes('SECTION')).toBe(true)
       const png = await exportCad({ path: fixture, format: 'png', outputName: 'fixture.png', width: 640 }, config)
       expect(png.ok).toBe(true)

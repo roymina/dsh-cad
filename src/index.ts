@@ -32,6 +32,7 @@ type CadDocument = Record<string, any>
 type Warning = { code: string; message: string }
 type CadResult = { document: CadDocument; inputPath: string; format: 'dwg' | 'dxf'; warnings: Warning[] }
 type ErrorResult = { ok: false; error: { code: string; message: string; details?: Record<string, any> } }
+type SemanticSnapshot = { texts: string[]; entityTypes: Record<string, number>; layers: string[] }
 
 const text = (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }]
 const jsonOutput = { schema: { type: 'json' as const }, render: text }
@@ -64,6 +65,44 @@ function entities(document: CadDocument): CadEntity[] {
 
 function blocks(document: CadDocument): CadEntity[] {
   return Array.from(document.blockRecords ?? []) as CadEntity[]
+}
+
+function semanticSnapshot(document: CadDocument): SemanticSnapshot {
+  const entityTypes: Record<string, number> = {}
+  const textValues: string[] = []
+  for (const entity of entities(document)) {
+    const kind = entityName(entity)
+    entityTypes[kind] = (entityTypes[kind] ?? 0) + 1
+    if (['TextEntity', 'MText', 'AttributeEntity'].includes(kind)) textValues.push(String(entity.value ?? entity._value ?? ''))
+  }
+  return {
+    texts: textValues,
+    entityTypes,
+    layers: Array.from(document.layers ?? []).map((layer: any) => String(layer.name)).sort(),
+  }
+}
+
+function equalRecords(left: Record<string, number>, right: Record<string, number>) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+  return Array.from(keys).every(key => left[key] === right[key])
+}
+
+function validateConversion(source: SemanticSnapshot, converted: SemanticSnapshot) {
+  const textValuesMatch = JSON.stringify(source.texts) === JSON.stringify(converted.texts)
+  const entityTypesMatch = equalRecords(source.entityTypes, converted.entityTypes)
+  const layersMatch = JSON.stringify(source.layers) === JSON.stringify(converted.layers)
+  const unpreservedObjectTypes = Array.from(new Set([...Object.keys(source.entityTypes), ...Object.keys(converted.entityTypes)]))
+    .filter(type => source.entityTypes[type] !== converted.entityTypes[type])
+  const differences: string[] = []
+  if (!textValuesMatch) differences.push('Text values differ after conversion.')
+  if (!entityTypesMatch) differences.push('Entity type counts differ after conversion.')
+  if (!layersMatch) differences.push('Layer names differ after conversion.')
+  return {
+    status: differences.length === 0 ? 'passed' as const : 'failed' as const,
+    checks: { textValuesMatch, entityTypesMatch, layersMatch },
+    differences,
+    unpreservedObjectTypes,
+  }
 }
 
 function layerRows(document: CadDocument) {
@@ -253,6 +292,8 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-preview`, args.format)
     if (args.format === 'dxf') {
+      const source = semanticSnapshot(loaded.document)
+      const conversionWarnings: Warning[] = []
       // Binary DXF avoids the ASCII reader's line trimming and writes encoded
       // bytes directly. Mark the output as Unicode so readers decode text as
       // UTF-8 rather than using the source DWG code page (for example GB2312).
@@ -267,14 +308,45 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
           write: (value: Uint8Array) => { fileStream.write(value) },
           flush: () => {},
           close: () => { fileStream.end() },
-        }, loaded.document as any, true)
+        }, loaded.document as any, true, undefined, (_sender: unknown, event: any) => {
+          conversionWarnings.push({ code: 'DXF_WRITER_WARNING', message: String(event?.message ?? event) })
+        })
         await finished(fileStream)
       } catch (cause) {
         fileStream.destroy()
         if (opened) await rm(output, { force: true })
         throw cause
       }
-      return { ok: true, format: 'dxf', outputPath: output, warnings: loaded.warnings }
+      const converted = await loadCad(output, config, signal)
+      if (isErrorResult(converted)) {
+        return {
+          ok: false,
+          error: { code: 'CONVERSION_VALIDATION_FAILED', message: 'The exported DXF could not be parsed for validation.', details: converted.error },
+          format: 'dxf', outputPath: output,
+          conversionValidation: { status: 'failed', checks: { textValuesMatch: false, entityTypesMatch: false, layersMatch: false }, differences: ['The exported DXF could not be parsed.'], unpreservedObjectTypes: Object.keys(source.entityTypes) },
+          lossRisk: { level: 'severe', reasons: ['The exported DXF could not be parsed.'] },
+          warnings: [...loaded.warnings, ...conversionWarnings],
+        }
+      }
+      const conversionValidation = validateConversion(source, semanticSnapshot(converted.document))
+      const lossRisk = {
+        level: conversionValidation.status === 'failed' ? 'severe' as const : conversionWarnings.length > 0 ? 'warning' as const : 'none' as const,
+        reasons: [...conversionValidation.differences, ...conversionWarnings.map(warning => warning.message)],
+      }
+      if (conversionValidation.status === 'failed') {
+        return {
+          ok: false,
+          error: { code: 'CONVERSION_VALIDATION_FAILED', message: 'The exported DXF did not pass semantic validation.', details: { differences: conversionValidation.differences } },
+          format: 'dxf', outputPath: output, conversionValidation, lossRisk,
+          unpreservedObjectTypes: conversionValidation.unpreservedObjectTypes,
+          warnings: [...loaded.warnings, ...conversionWarnings, ...converted.warnings],
+        }
+      }
+      return {
+        ok: true, format: 'dxf', outputPath: output, conversionValidation, lossRisk,
+        unpreservedObjectTypes: conversionValidation.unpreservedObjectTypes,
+        warnings: [...loaded.warnings, ...conversionWarnings, ...converted.warnings],
+      }
     }
     const drawing = makeSvg(loaded.document, args.layers, args.background)
     if (args.format === 'svg') await writeFile(output, drawing.svg, 'utf8')

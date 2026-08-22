@@ -6,7 +6,7 @@
 ## 阶段一：准确性热修复（P0/P1 阻断项）
 
 - [x] 1.1 修复 DXF 中文编码（P0）：改用 `@node-projects/acad-ts` 字节输出接口，使实际编码与 `$DWGCODEPAGE` 一致；或将输出升级为支持 Unicode 的 DXF 版本并同步修改 Header。
-- [ ] 1.2 转换后重新打开输出文件执行语义校验；返回 `conversionValidation`、`lossRisk` 与无法保真的对象类型；存在严重警告时不得仅返回笼统的 `ok: true`。
+- [x] 1.2 转换后重新打开输出文件执行语义校验；返回 `conversionValidation`、`lossRisk` 与无法保真的对象类型；存在严重警告时不得仅返回笼统的 `ok: true`。
 - [x] 1.3 避免把完整 DXF 先积累为字符串数组再 `join`，降低峰值内存占用。
 - [ ] 1.4 修复图层 Frozen 判断（P1）：改用 `layerFlags & LayerFlags.Frozen`，不再使用不存在的 `isFrozen` 属性。
 - [ ] 1.5 修复预览统计语义（P0）：`renderedPrimitiveCount` 与实际 SVG 图元一致；新增 `renderedPrimitiveCount` / `unsupportedEntityTypes` / `previewCompleteness`，不再把筛选后实体数当作已渲染数。
