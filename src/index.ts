@@ -365,6 +365,23 @@ function renderLeader(entity: CadEntity, color: string) {
   return path ? `<path d="${path}" fill="none" stroke="${color}"/>` : ''
 }
 
+function isVisibleInPreview(entity: CadEntity) {
+  const layer = entity.layer
+  return !entity.isInvisible && layer?.isOn !== false && layer?.plotFlag !== false && (Number(layer?.layerFlags ?? 0) & LayerFlags.Frozen) === 0
+}
+
+function svgColor(entity: CadEntity) {
+  const color = entity.getActiveColor?.() ?? entity.color
+  const [red, green, blue] = color?.getRgb?.() ?? [32, 32, 32]
+  return `rgb(${red},${green},${blue})`
+}
+
+function svgDashArray(entity: CadEntity) {
+  const segments = entity.getActiveLineType?.()?.segments ?? []
+  const values = Array.from(segments as Array<{ length: number }>).map(segment => Math.abs(segment.length)).filter(length => Number.isFinite(length) && length > 0)
+  return values.length ? values.join(' ') : undefined
+}
+
 function hasCircularBlockReference(block: CadEntity, blockStack = new Set<string>()): boolean {
   const blockName = String(block?.name ?? '')
   if (!blockName || blockStack.has(blockName)) return true
@@ -407,8 +424,8 @@ function layoutEntities(document: CadDocument, layoutName?: string): CadEntity[]
 }
 
 function makeSvg(document: CadDocument, selectedLayers?: string[], background = 'white', maxBlockDepth = 16, maxBlockInstances = 10_000, layoutName?: string) {
-  const source = (layoutEntities(document, layoutName) ?? []).filter(entity => !entity.isInvisible && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
-  const drawing = source.flatMap(entity => entityName(entity) === 'Insert' ? expandInsert(entity, maxBlockDepth, maxBlockInstances) : [entity])
+  const source = (layoutEntities(document, layoutName) ?? []).filter(entity => isVisibleInPreview(entity) && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
+  const drawing = source.flatMap(entity => entityName(entity) === 'Insert' ? expandInsert(entity, maxBlockDepth, maxBlockInstances) : [entity]).filter(isVisibleInPreview)
   const points = drawing.flatMap(drawingPoints)
   const declared = bounds(document)
   const minX = declared?.min.x ?? Math.min(...points.map(p => p.x), 0)
@@ -420,10 +437,10 @@ function makeSvg(document: CadDocument, selectedLayers?: string[], background = 
   const unsupportedEntityTypes: Record<string, number> = {}
   const primitives: string[] = []
   for (const entity of drawing) {
-    const color = '#202020'
     const kind = entityName(entity)
-    const primitive = svgRenderers[kind]?.(entity, color) ?? ''
-    if (primitive) primitives.push(primitive)
+    const primitive = svgRenderers[kind]?.(entity, svgColor(entity)) ?? ''
+    const dashArray = svgDashArray(entity)
+    if (primitive) primitives.push(dashArray ? primitive.replace(/ stroke="[^"]+"/, match => `${match} stroke-dasharray="${dashArray}"`) : primitive)
     else unsupportedEntityTypes[kind] = (unsupportedEntityTypes[kind] ?? 0) + 1
   }
   const content = primitives.join('')
