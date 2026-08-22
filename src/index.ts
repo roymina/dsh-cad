@@ -431,7 +431,14 @@ function layoutEntities(document: CadDocument, layoutName?: string): CadEntity[]
 
 function makeSvg(document: CadDocument, selectedLayers?: string[], background = 'white', maxBlockDepth = 16, maxBlockInstances = 10_000, layoutName?: string) {
   const source = (layoutEntities(document, layoutName) ?? []).filter(entity => isVisibleInPreview(entity) && (!selectedLayers?.length || selectedLayers.includes(entityLayer(entity))))
-  const drawing = source.flatMap(entity => entityName(entity) === 'Insert' ? expandInsert(entity, maxBlockDepth, maxBlockInstances) : [entity]).filter(isVisibleInPreview)
+  const unsupportedEntityTypes: Record<string, number> = {}
+  const expanded = source.flatMap(entity => {
+    if (entityName(entity) !== 'Insert') return [entity]
+    const result = expandInsert(entity, maxBlockDepth, maxBlockInstances)
+    if (result.length === 0) unsupportedEntityTypes.Insert = (unsupportedEntityTypes.Insert ?? 0) + 1
+    return result
+  })
+  const drawing = expanded.filter(isVisibleInPreview)
   const points = drawing.filter(entity => svgRenderers[entityName(entity)]).flatMap(renderedBoundsPoints)
   const declared = bounds(document)
   const minX = points.length ? Math.min(...points.map(point => point.x)) : declared?.min.x ?? 0
@@ -440,7 +447,6 @@ function makeSvg(document: CadDocument, selectedLayers?: string[], background = 
   const maxY = points.length ? Math.max(...points.map(point => point.y)) : declared?.max.y ?? 100
   const width = Math.max(maxX - minX, 1)
   const height = Math.max(maxY - minY, 1)
-  const unsupportedEntityTypes: Record<string, number> = {}
   const primitives: string[] = []
   for (const entity of drawing) {
     const kind = entityName(entity)
@@ -454,9 +460,11 @@ function makeSvg(document: CadDocument, selectedLayers?: string[], background = 
   return {
     svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${-maxY} ${width} ${height}">${bg}<g stroke-width="${Math.min(Math.max(width, height) / 2500, 100)}">${content}</g></svg>`,
     bounds: { min: { x: minX, y: minY }, max: { x: maxX, y: maxY } },
-    sourceEntityCount: drawing.length,
+    sourceEntityCount: source.length,
+    expandedEntityCount: drawing.length,
     renderedPrimitiveCount: primitives.length,
     unsupportedEntityTypes,
+    skippedEntityCount: Object.values(unsupportedEntityTypes).reduce((sum, count) => sum + count, 0),
     previewCompleteness: drawing.length === 0 ? 1 : primitives.length / drawing.length,
   }
 }
@@ -592,7 +600,8 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
     }
     return {
       ok: true, format: args.format, outputPath: output, bounds: drawing.bounds,
-      layout: args.layout ?? 'Model', sourceEntityCount: drawing.sourceEntityCount, renderedPrimitiveCount: drawing.renderedPrimitiveCount,
+      layout: args.layout ?? 'Model', sourceEntityCount: drawing.sourceEntityCount, expandedEntityCount: drawing.expandedEntityCount,
+      renderedPrimitiveCount: drawing.renderedPrimitiveCount, skippedEntityCount: drawing.skippedEntityCount,
       unsupportedEntityTypes: drawing.unsupportedEntityTypes, previewCompleteness: drawing.previewCompleteness,
       warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
     }

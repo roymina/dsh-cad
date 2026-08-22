@@ -166,7 +166,9 @@ export declare function exportCad(args: {
     bounds?: undefined;
     layout?: undefined;
     sourceEntityCount?: undefined;
+    expandedEntityCount?: undefined;
     renderedPrimitiveCount?: undefined;
+    skippedEntityCount?: undefined;
     unsupportedEntityTypes?: undefined;
     previewCompleteness?: undefined;
 } | {
@@ -199,7 +201,9 @@ export declare function exportCad(args: {
     bounds?: undefined;
     layout?: undefined;
     sourceEntityCount?: undefined;
+    expandedEntityCount?: undefined;
     renderedPrimitiveCount?: undefined;
+    skippedEntityCount?: undefined;
     unsupportedEntityTypes?: undefined;
     previewCompleteness?: undefined;
 } | {
@@ -226,7 +230,9 @@ export declare function exportCad(args: {
     bounds?: undefined;
     layout?: undefined;
     sourceEntityCount?: undefined;
+    expandedEntityCount?: undefined;
     renderedPrimitiveCount?: undefined;
+    skippedEntityCount?: undefined;
     unsupportedEntityTypes?: undefined;
     previewCompleteness?: undefined;
 } | {
@@ -245,7 +251,9 @@ export declare function exportCad(args: {
     };
     layout: string;
     sourceEntityCount: number;
+    expandedEntityCount: number;
     renderedPrimitiveCount: number;
+    skippedEntityCount: number;
     unsupportedEntityTypes: Record<string, number>;
     previewCompleteness: number;
     warnings: WarningSummary;
