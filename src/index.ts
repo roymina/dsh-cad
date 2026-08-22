@@ -24,6 +24,11 @@ export interface Config {
   maxBlockInstances?: number
   maxConcurrent?: number
   allowedInputRoots?: string[]
+  maxSvgBytes?: number
+  maxCsvBytes?: number
+  maxTextLength?: number
+  maxTotalVertices?: number
+  maxEntityVertices?: number
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -38,6 +43,11 @@ export const Config: Schema<Config> = Schema.object({
   maxBlockInstances: Schema.number().default(10_000),
   maxConcurrent: Schema.number().default(2),
   allowedInputRoots: Schema.array(Schema.string()),
+  maxSvgBytes: Schema.number().default(20_000_000),
+  maxCsvBytes: Schema.number().default(20_000_000),
+  maxTextLength: Schema.number().default(1_000_000),
+  maxTotalVertices: Schema.number().default(5_000_000),
+  maxEntityVertices: Schema.number().default(500_000),
 })
 
 type CadEntity = AcadEntity & Record<string, any>
@@ -278,6 +288,16 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
     if (entityCount > config.maxEntities) {
       return error('ENTITY_LIMIT_EXCEEDED', 'The drawing exceeds the configured entity limit.', { entityCount, maxEntities: config.maxEntities })
     }
+    const maxTextLength = config.maxTextLength ?? 1_000_000
+    const oversizedText = entities(document).find(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity)) && String(entity.value ?? '').length > maxTextLength)
+    if (oversizedText) return error('TEXT_LIMIT_EXCEEDED', 'The drawing contains text exceeding the configured length limit.', { maxTextLength, handle: oversizedText.handle })
+    let totalVertices = 0
+    for (const entity of entities(document)) {
+      const count = Array.isArray(entity.vertices) ? entity.vertices.length : 0
+      if (count > (config.maxEntityVertices ?? 500_000)) return error('GEOMETRY_LIMIT_EXCEEDED', 'An entity exceeds the configured vertex limit.', { handle: entity.handle, vertices: count, maxEntityVertices: config.maxEntityVertices ?? 500_000 })
+      totalVertices += count
+    }
+    if (totalVertices > (config.maxTotalVertices ?? 5_000_000)) return error('GEOMETRY_LIMIT_EXCEEDED', 'The drawing exceeds the configured total vertex limit.', { totalVertices, maxTotalVertices: config.maxTotalVertices ?? 5_000_000 })
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after parsing the drawing.')
     return { document, inputPath, format, warnings }
   } catch (cause) {
@@ -603,7 +623,10 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
   if (!args.saveAs) return result
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-${args.section}`, args.saveAs)
-    await writeFile(output, args.saveAs === 'json' ? JSON.stringify(result, null, 2) : csv(result.records as Record<string, unknown>[], args.bom), { encoding: 'utf8', flag: 'wx' })
+    const payload = args.saveAs === 'json' ? JSON.stringify(result, null, 2) : csv(result.records as Record<string, unknown>[], args.bom)
+    const maxBytes = config.maxCsvBytes ?? 20_000_000
+    if (Buffer.byteLength(payload, 'utf8') > maxBytes) return error('OUTPUT_LIMIT_EXCEEDED', 'The report exceeds the configured byte limit.', { maxBytes })
+    await writeFile(output, payload, { encoding: 'utf8', flag: 'wx' })
     return { ...result, outputPath: output }
   } catch (cause: any) {
     return error(cause?.code === 'EEXIST' ? 'OUTPUT_EXISTS' : 'OUTPUT_FAILED', cause instanceof Error ? cause.message : String(cause))
@@ -682,7 +705,12 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       }
     }
     const drawing = makeSvg(loaded.document, args.layers, args.background, config.maxBlockDepth ?? 16, config.maxBlockInstances ?? 10_000, args.layout)
-    if (args.format === 'svg') await writeFile(output, drawing.svg, { encoding: 'utf8', flag: 'wx' })
+    if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before rendering.')
+    if (args.format === 'svg') {
+      const maxBytes = config.maxSvgBytes ?? 20_000_000
+      if (Buffer.byteLength(drawing.svg, 'utf8') > maxBytes) return error('RENDER_LIMIT_EXCEEDED', 'The SVG exceeds the configured byte limit.', { maxBytes })
+      await writeFile(output, drawing.svg, { encoding: 'utf8', flag: 'wx' })
+    }
     else {
       const drawingWidth = drawing.bounds.max.x - drawing.bounds.min.x
       const drawingHeight = drawing.bounds.max.y - drawing.bounds.min.y
@@ -695,6 +723,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       const rendered = new Resvg(drawing.svg, { fitTo: args.height ? { mode: 'height', value: targetHeight } : { mode: 'width', value: targetWidth }, background: args.background === 'transparent' ? undefined : args.background ?? 'white' }).render()
       if (rendered.width * rendered.height > maxPixels) return error('RENDER_LIMIT_EXCEEDED', 'The rendered PNG exceeds the configured pixel limit.', { width: rendered.width, height: rendered.height, maxImagePixels: maxPixels })
       const png = rendered.asPng()
+      if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after rendering.')
       await writeFile(output, png, { flag: 'wx' })
     }
     return {

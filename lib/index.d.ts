@@ -14,6 +14,11 @@ export interface Config {
     maxBlockInstances?: number;
     maxConcurrent?: number;
     allowedInputRoots?: string[];
+    maxSvgBytes?: number;
+    maxCsvBytes?: number;
+    maxTextLength?: number;
+    maxTotalVertices?: number;
+    maxEntityVertices?: number;
 }
 export declare const Config: Schema<Config>;
 type Warning = {
