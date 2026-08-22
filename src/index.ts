@@ -36,7 +36,7 @@ export const Config: Schema<Config> = Schema.object({
   outputDir: Schema.string().default('./cad-output'),
   maxFileSizeMB: Schema.number().default(50),
   maxEntities: Schema.number().default(200_000),
-  maxExtractItems: Schema.number().default(10_000),
+  maxExtractItems: Schema.number().default(500),
   maxImageDimension: Schema.number().default(8192),
   maxImagePixels: Schema.number().default(64_000_000),
   maxWarningSamples: Schema.number().default(50),
@@ -634,7 +634,7 @@ export async function inspectCad(pathValue: string, config: Config, signal?: Abo
   return inspect(loaded.document, loaded.inputPath, loaded.format, loaded.warnings, config.maxWarningSamples ?? 50)
 }
 
-export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; offset?: number; search?: string; handle?: string; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean }, config: Config, signal?: AbortSignal) {
+export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; offset?: number; search?: string; handle?: string; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean; summary?: boolean }, config: Config, signal?: AbortSignal) {
   const invalid = invalidPath(args.path)
   if (invalid) return invalid
   if (args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 0)) return error('INVALID_ARGUMENT', 'limit must be a non-negative integer.')
@@ -643,6 +643,7 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
   const loaded = await loadCad(args.path, config, signal)
   if (isErrorResult(loaded)) return loaded
   const result = extract(loaded.document, args.section, args.layers, args.entityTypes, Math.min(args.limit ?? config.maxExtractItems, config.maxExtractItems), args.offset ?? 0, args.search, args.handle)
+  if (args.summary) return { ok: true, section: result.section, total: result.total, offset: result.offset, returned: result.returned, truncated: result.truncated }
   if (!args.saveAs) return result
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-${args.section}`, args.saveAs)
@@ -775,7 +776,7 @@ export function apply(ctx: Context, config: Config) {
       path: { type: 'string', required: true, description: 'Absolute or working-directory-relative DWG/DXF path.' },
       section: { type: 'string', required: true, enum: ['texts', 'layers', 'blocks', 'entities'], description: 'Information section to extract.' },
       layers: { type: 'array', items: { type: 'string' }, description: 'Optional layer-name filter.' }, entityTypes: { type: 'array', items: { type: 'string' }, description: 'Optional entity-type filter.' },
-      limit: { type: 'integer', description: 'Maximum records to return.' }, offset: { type: 'integer', description: 'Number of matching records to skip.' }, search: { type: 'string', description: 'Case-insensitive text search.' }, handle: { type: 'string', description: 'Exact entity Handle, decimal or hexadecimal.' }, saveAs: { type: 'string', enum: ['json', 'csv'], description: 'Optional file format for a saved report.' }, outputName: { type: 'string', description: 'Output filename only; directories are not allowed.' },
+      limit: { type: 'integer', description: 'Maximum records to return (default 500).' }, offset: { type: 'integer', description: 'Number of matching records to skip.' }, search: { type: 'string', description: 'Case-insensitive text search.' }, handle: { type: 'string', description: 'Exact entity Handle, decimal or hexadecimal.' }, summary: { type: 'boolean', description: 'Return counts and truncation without records.' }, saveAs: { type: 'string', enum: ['json', 'csv'], description: 'Optional file format for a saved report.' }, outputName: { type: 'string', description: 'Output filename only; directories are not allowed.' },
     }, output: jsonOutput,
     async execute(args, exec) { return extractCad(args as any, config, exec.signal) as any },
   }))

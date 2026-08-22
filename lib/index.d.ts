@@ -139,6 +139,7 @@ export declare function extractCad(args: {
     saveAs?: 'json' | 'csv';
     outputName?: string;
     bom?: boolean;
+    summary?: boolean;
 }, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
     ok: boolean;
     section: string;
@@ -164,6 +165,13 @@ export declare function extractCad(args: {
         isFrozen?: undefined;
         colorIndex?: undefined;
     })[];
+} | {
+    ok: boolean;
+    section: string;
+    total: number;
+    offset: number;
+    returned: number;
+    truncated: boolean;
 } | {
     bytes: number;
     outputBytes: number;
