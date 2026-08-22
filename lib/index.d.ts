@@ -147,6 +147,17 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
     textCount: number;
     warnings: WarningSummary;
 }>;
+export declare function compareCad(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
+    ok: boolean;
+    firstPath: string;
+    secondPath: string;
+    equal: boolean;
+    differences: {
+        texts: boolean;
+        entityTypes: boolean;
+        layers: boolean;
+    };
+}>;
 export declare function extractCad(args: {
     path: string;
     section: 'texts' | 'layers' | 'blocks' | 'entities';

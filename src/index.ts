@@ -676,6 +676,14 @@ export async function inspectCad(pathValue: string, config: Config, signal?: Abo
   return inspect(loaded.document, loaded.inputPath, loaded.format, loaded.warnings, config.maxWarningSamples ?? 50)
 }
 
+export async function compareCad(firstPath: string, secondPath: string, config: Config, signal?: AbortSignal) {
+  const [first, second] = await Promise.all([loadCad(firstPath, config, signal), loadCad(secondPath, config, signal)])
+  if (isErrorResult(first)) return first
+  if (isErrorResult(second)) return second
+  const left = semanticSnapshot(first.document); const right = semanticSnapshot(second.document)
+  return { ok: true, firstPath: first.inputPath, secondPath: second.inputPath, equal: JSON.stringify(left) === JSON.stringify(right), differences: { texts: left.texts.length !== right.texts.length || JSON.stringify(left.texts) !== JSON.stringify(right.texts), entityTypes: !equalRecords(left.entityTypes, right.entityTypes), layers: JSON.stringify(left.layers) !== JSON.stringify(right.layers) } }
+}
+
 export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; offset?: number; search?: string; handle?: string; window?: { minX: number; minY: number; maxX: number; maxY: number }; nearest?: { x: number; y: number }; saveAs?: 'json' | 'csv'; outputName?: string; bom?: boolean; summary?: boolean }, config: Config, signal?: AbortSignal) {
   const invalid = invalidPath(args.path)
   if (invalid) return invalid
