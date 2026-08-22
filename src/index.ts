@@ -570,7 +570,7 @@ async function outputPath(config: Config, name: string, extension: string) {
   const realDir = await realpath(dir)
   const result = path.join(realDir, name.endsWith(`.${extension}`) ? name : `${name}.${extension}`)
   if (!result.startsWith(`${realDir}${path.sep}`)) throw new Error('Output path escapes outputDir.')
-  try { await lstat(result); throw new Error('Output file already exists; choose a different outputName.') } catch (cause: any) { if (cause?.code !== 'ENOENT') throw cause }
+  try { await lstat(result); const cause = new Error('Output file already exists; choose a different outputName.'); Object.assign(cause, { code: 'EEXIST' }); throw cause } catch (cause: any) { if (cause?.code !== 'ENOENT') throw cause }
   return result
 }
 
@@ -599,10 +599,10 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
   if (!args.saveAs) return result
   try {
     const output = await outputPath(config, args.outputName ?? `${path.parse(loaded.inputPath).name}-${args.section}`, args.saveAs)
-    await writeFile(output, args.saveAs === 'json' ? JSON.stringify(result, null, 2) : csv(result.records as Record<string, unknown>[]), 'utf8')
+    await writeFile(output, args.saveAs === 'json' ? JSON.stringify(result, null, 2) : csv(result.records as Record<string, unknown>[]), { encoding: 'utf8', flag: 'wx' })
     return { ...result, outputPath: output }
-  } catch (cause) {
-    return error('OUTPUT_FAILED', cause instanceof Error ? cause.message : String(cause))
+  } catch (cause: any) {
+    return error(cause?.code === 'EEXIST' ? 'OUTPUT_EXISTS' : 'OUTPUT_FAILED', cause instanceof Error ? cause.message : String(cause))
   }
 }
 
@@ -678,7 +678,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       }
     }
     const drawing = makeSvg(loaded.document, args.layers, args.background, config.maxBlockDepth ?? 16, config.maxBlockInstances ?? 10_000, args.layout)
-    if (args.format === 'svg') await writeFile(output, drawing.svg, 'utf8')
+    if (args.format === 'svg') await writeFile(output, drawing.svg, { encoding: 'utf8', flag: 'wx' })
     else {
       const drawingWidth = drawing.bounds.max.x - drawing.bounds.min.x
       const drawingHeight = drawing.bounds.max.y - drawing.bounds.min.y
@@ -691,7 +691,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       const rendered = new Resvg(drawing.svg, { fitTo: args.height ? { mode: 'height', value: targetHeight } : { mode: 'width', value: targetWidth }, background: args.background === 'transparent' ? undefined : args.background ?? 'white' }).render()
       if (rendered.width * rendered.height > maxPixels) return error('RENDER_LIMIT_EXCEEDED', 'The rendered PNG exceeds the configured pixel limit.', { width: rendered.width, height: rendered.height, maxImagePixels: maxPixels })
       const png = rendered.asPng()
-      await writeFile(output, png)
+      await writeFile(output, png, { flag: 'wx' })
     }
     return {
       ok: true, format: args.format, outputPath: output, bounds: drawing.bounds,
@@ -700,8 +700,8 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       unsupportedEntityTypes: drawing.unsupportedEntityTypes, previewCompleteness: drawing.previewCompleteness,
       warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
     }
-  } catch (cause) {
-    return error('EXPORT_FAILED', cause instanceof Error ? cause.message : String(cause))
+  } catch (cause: any) {
+    return error(cause?.code === 'EEXIST' ? 'OUTPUT_EXISTS' : 'EXPORT_FAILED', cause instanceof Error ? cause.message : String(cause))
   }
 }
 
