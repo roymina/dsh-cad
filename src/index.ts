@@ -17,6 +17,7 @@ export interface Config {
   maxEntities: number
   maxExtractItems: number
   maxImageDimension: number
+  maxImagePixels?: number
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -25,6 +26,7 @@ export const Config: Schema<Config> = Schema.object({
   maxEntities: Schema.number().default(200_000),
   maxExtractItems: Schema.number().default(10_000),
   maxImageDimension: Schema.number().default(8192),
+  maxImagePixels: Schema.number().default(64_000_000),
 })
 
 type CadEntity = Record<string, any>
@@ -39,6 +41,24 @@ const jsonOutput = { schema: { type: 'json' as const }, render: text }
 
 function error(code: string, message: string, details?: Record<string, any>): ErrorResult {
   return { ok: false, error: { code, message, ...(details ? { details } : {}) } }
+}
+
+const namedBackgrounds = new Set(['black', 'white', 'gray', 'silver', 'red', 'green', 'blue', 'yellow', 'cyan', 'magenta'])
+
+function validPath(value: string) {
+  return value.trim().length > 0
+}
+
+function validOutputName(value: string) {
+  return value.trim().length > 0 && value !== '.' && value !== '..' && path.basename(value) === value && !/[<>:"/\\|?*\u0000-\u001F]/.test(value)
+}
+
+function validBackground(value: string) {
+  return value === 'transparent' || namedBackgrounds.has(value.toLowerCase()) || /^#[0-9a-f]{3}(?:[0-9a-f]{3})?(?:[0-9a-f]{2})?$/i.test(value)
+}
+
+function invalidPath(pathValue: string) {
+  return !validPath(pathValue) ? error('INVALID_ARGUMENT', 'path must be a non-empty string.') : undefined
 }
 
 function isErrorResult(value: CadResult | ErrorResult): value is ErrorResult {
@@ -271,7 +291,7 @@ function makeSvg(document: CadDocument, selectedLayers?: string[], background = 
 }
 
 async function outputPath(config: Config, name: string, extension: string) {
-  if (!name || path.basename(name) !== name || name.includes('..')) throw new Error('outputName must be a filename without path segments.')
+  if (!validOutputName(name)) throw new Error('outputName must be a non-empty filename without path segments or reserved characters.')
   const dir = path.resolve(config.outputDir)
   await mkdir(dir, { recursive: true })
   const realDir = await realpath(dir)
@@ -288,12 +308,18 @@ function csv(records: Record<string, unknown>[]) {
 }
 
 export async function inspectCad(pathValue: string, config: Config, signal?: AbortSignal) {
+  const invalid = invalidPath(pathValue)
+  if (invalid) return invalid
   const loaded = await loadCad(pathValue, config, signal)
   if (isErrorResult(loaded)) return loaded
   return inspect(loaded.document, loaded.inputPath, loaded.format, loaded.warnings)
 }
 
 export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; saveAs?: 'json' | 'csv'; outputName?: string }, config: Config, signal?: AbortSignal) {
+  const invalid = invalidPath(args.path)
+  if (invalid) return invalid
+  if (args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 0)) return error('INVALID_ARGUMENT', 'limit must be a non-negative integer.')
+  if (args.outputName !== undefined && !validOutputName(args.outputName)) return error('INVALID_ARGUMENT', 'outputName must be a non-empty filename without path segments or reserved characters.')
   const loaded = await loadCad(args.path, config, signal)
   if (isErrorResult(loaded)) return loaded
   const result = extract(loaded.document, args.section, args.layers, args.entityTypes, Math.min(args.limit ?? config.maxExtractItems, config.maxExtractItems))
@@ -307,7 +333,14 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
   }
 }
 
-export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'dxf'; outputName?: string; layers?: string[]; width?: number; background?: string }, config: Config, signal?: AbortSignal) {
+export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'dxf'; outputName?: string; layers?: string[]; width?: number; height?: number; background?: string }, config: Config, signal?: AbortSignal) {
+  const invalid = invalidPath(args.path)
+  if (invalid) return invalid
+  if (args.outputName !== undefined && !validOutputName(args.outputName)) return error('INVALID_ARGUMENT', 'outputName must be a non-empty filename without path segments or reserved characters.')
+  if (args.background !== undefined && !validBackground(args.background)) return error('INVALID_ARGUMENT', 'background must be transparent, a supported named color, or a #RGB/#RRGGBB/#RRGGBBAA color.')
+  if (args.width !== undefined && (!Number.isInteger(args.width) || args.width < 1 || args.width > config.maxImageDimension)) return error('INVALID_ARGUMENT', `width must be an integer between 1 and ${config.maxImageDimension}.`)
+  if (args.height !== undefined && (!Number.isInteger(args.height) || args.height < 1 || args.height > config.maxImageDimension)) return error('INVALID_ARGUMENT', `height must be an integer between 1 and ${config.maxImageDimension}.`)
+  if (args.width !== undefined && args.height !== undefined) return error('INVALID_ARGUMENT', 'Specify either width or height for PNG output, not both.')
   const loaded = await loadCad(args.path, config, signal)
   if (isErrorResult(loaded)) return loaded
   try {
@@ -372,8 +405,17 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
     const drawing = makeSvg(loaded.document, args.layers, args.background)
     if (args.format === 'svg') await writeFile(output, drawing.svg, 'utf8')
     else {
-      const width = Math.min(Math.max(Math.round(args.width ?? 1600), 64), config.maxImageDimension)
-      const png = new Resvg(drawing.svg, { fitTo: { mode: 'width', value: width }, background: args.background === 'transparent' ? undefined : args.background ?? 'white' }).render().asPng()
+      const drawingWidth = drawing.bounds.max.x - drawing.bounds.min.x
+      const drawingHeight = drawing.bounds.max.y - drawing.bounds.min.y
+      const targetWidth = args.width ?? (args.height ? Math.max(1, Math.round(args.height * drawingWidth / drawingHeight)) : 1600)
+      const targetHeight = args.height ?? Math.max(1, Math.round(targetWidth * drawingHeight / drawingWidth))
+      const maxPixels = config.maxImagePixels ?? 64_000_000
+      if (targetWidth > config.maxImageDimension || targetHeight > config.maxImageDimension || targetWidth * targetHeight > maxPixels) {
+        return error('RENDER_LIMIT_EXCEEDED', 'The requested PNG dimensions exceed the configured limits.', { width: targetWidth, height: targetHeight, maxImageDimension: config.maxImageDimension, maxImagePixels: maxPixels })
+      }
+      const rendered = new Resvg(drawing.svg, { fitTo: args.height ? { mode: 'height', value: targetHeight } : { mode: 'width', value: targetWidth }, background: args.background === 'transparent' ? undefined : args.background ?? 'white' }).render()
+      if (rendered.width * rendered.height > maxPixels) return error('RENDER_LIMIT_EXCEEDED', 'The rendered PNG exceeds the configured pixel limit.', { width: rendered.width, height: rendered.height, maxImagePixels: maxPixels })
+      const png = rendered.asPng()
       await writeFile(output, png)
     }
     return {
@@ -408,7 +450,7 @@ export function apply(ctx: Context, config: Config) {
     parameters: {
       path: { type: 'string', required: true, description: 'Absolute or working-directory-relative DWG/DXF path.' },
       format: { type: 'string', required: true, enum: ['svg', 'png', 'dxf'], description: 'Export format.' }, outputName: { type: 'string', description: 'Output filename only; directories are not allowed.' },
-      layers: { type: 'array', items: { type: 'string' }, description: 'Optional layer-name filter for SVG/PNG.' }, width: { type: 'integer', description: 'PNG width in pixels.' }, background: { type: 'string', description: 'SVG/PNG background CSS color, or transparent.' },
+      layers: { type: 'array', items: { type: 'string' }, description: 'Optional layer-name filter for SVG/PNG.' }, width: { type: 'integer', description: 'PNG width in pixels; must be at least 1 and within the configured maximum.' }, height: { type: 'integer', description: 'Alternative PNG height in pixels; must be at least 1, within the configured maximum, and cannot be combined with width.' }, background: { type: 'string', description: 'SVG/PNG background: transparent, a supported named color, or #RGB/#RRGGBB/#RRGGBBAA.' },
     }, output: jsonOutput,
     async execute(args, exec) { return exportCad(args as any, config, exec.signal) as any },
   }))

@@ -8,6 +8,7 @@ export interface Config {
     maxEntities: number;
     maxExtractItems: number;
     maxImageDimension: number;
+    maxImagePixels?: number;
 }
 export declare const Config: Schema<Config>;
 type Warning = {
@@ -121,6 +122,7 @@ export declare function exportCad(args: {
     outputName?: string;
     layers?: string[];
     width?: number;
+    height?: number;
     background?: string;
 }, config: Config, signal?: AbortSignal): Promise<ErrorResult | {
     ok: boolean;
