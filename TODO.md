@@ -11,7 +11,7 @@
 - [x] 1.4 修复图层 Frozen 判断（P1）：改用 `layerFlags & LayerFlags.Frozen`，不再使用不存在的 `isFrozen` 属性。
 - [x] 1.5 修复预览统计语义（P0）：`renderedPrimitiveCount` 与实际 SVG 图元一致；新增 `renderedPrimitiveCount` / `unsupportedEntityTypes` / `previewCompleteness`，不再把筛选后实体数当作已渲染数。
 - [x] 1.6 增加参数运行时约束：`limit >= 0`（拒绝负数导致的 `slice(0, -n)`）、PNG width/height/总像素范围、非空路径、合法背景色、非空且合法的输出文件名。
-- [ ] 1.7 限制警告（按类型去重、分类、限制明细数量，如返回前 50 条 + 总数 + 类型统计）与模型响应大小。
+- [x] 1.7 限制警告（按类型去重、分类、限制明细数量，如返回前 50 条 + 总数 + 类型统计）与模型响应大小。
 - [ ] 1.8 阶段一回归测试：中文往返、图层状态、预览统计全部通过（对应 `NEXT_PLAN.md` §13 完成标准）。
 
 ## 阶段二：预览保真

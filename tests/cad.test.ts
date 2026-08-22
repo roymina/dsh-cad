@@ -11,7 +11,10 @@ describe('DWG support', () => {
   it('inspects the AC1018 DWG fixture', async () => {
     const result = await inspectCad(fixture, { outputDir: '.', maxFileSizeMB: 50, maxEntities: 200_000, maxExtractItems: 10_000, maxImageDimension: 8192 })
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.entityCount).toBeGreaterThan(0)
+    if (result.ok) {
+      expect(result.entityCount).toBeGreaterThan(0)
+      expect(result.warnings).toEqual(expect.objectContaining({ total: expect.any(Number), byCode: expect.any(Object), samples: expect.any(Array), truncated: expect.any(Boolean) }))
+    }
   })
 
   it('inspects and converts the second DWG fixture', async () => {

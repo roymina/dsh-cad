@@ -18,6 +18,7 @@ export interface Config {
   maxExtractItems: number
   maxImageDimension: number
   maxImagePixels?: number
+  maxWarningSamples?: number
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -27,11 +28,13 @@ export const Config: Schema<Config> = Schema.object({
   maxExtractItems: Schema.number().default(10_000),
   maxImageDimension: Schema.number().default(8192),
   maxImagePixels: Schema.number().default(64_000_000),
+  maxWarningSamples: Schema.number().default(50),
 })
 
 type CadEntity = Record<string, any>
 type CadDocument = Record<string, any>
 type Warning = { code: string; message: string }
+type WarningSummary = { total: number; byCode: Record<string, number>; samples: Warning[]; truncated: boolean }
 type CadResult = { document: CadDocument; inputPath: string; format: 'dwg' | 'dxf'; warnings: Warning[] }
 type ErrorResult = { ok: false; error: { code: string; message: string; details?: Record<string, any> } }
 type SemanticSnapshot = { texts: string[]; entityTypes: Record<string, number>; layers: string[] }
@@ -63,6 +66,17 @@ function invalidPath(pathValue: string) {
 
 function isErrorResult(value: CadResult | ErrorResult): value is ErrorResult {
   return 'ok' in value && value.ok === false
+}
+
+function summarizeWarnings(warnings: Warning[], maxSamples = 50): WarningSummary {
+  const byCode: Record<string, number> = {}
+  const unique = new Map<string, Warning>()
+  for (const warning of warnings) {
+    byCode[warning.code] = (byCode[warning.code] ?? 0) + 1
+    unique.set(`${warning.code}\u0000${warning.message}`, warning)
+  }
+  const samples = Array.from(unique.values()).slice(0, maxSamples)
+  return { total: warnings.length, byCode, samples, truncated: unique.size > samples.length }
 }
 
 function entityName(entity: CadEntity) {
@@ -175,7 +189,7 @@ async function loadCad(input: string, config: Config, signal?: AbortSignal): Pro
   }
 }
 
-function inspect(document: CadDocument, inputPath: string, format: string, warnings: Warning[]) {
+function inspect(document: CadDocument, inputPath: string, format: string, warnings: Warning[], maxWarningSamples: number) {
   const all = entities(document)
   const byType: Record<string, number> = {}
   const byLayer: Record<string, number> = {}
@@ -197,7 +211,7 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     entityCountByLayer: byLayer,
     blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length })),
     textCount: all.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity))).length,
-    warnings,
+    warnings: summarizeWarnings(warnings, maxWarningSamples),
   }
 }
 
@@ -312,7 +326,7 @@ export async function inspectCad(pathValue: string, config: Config, signal?: Abo
   if (invalid) return invalid
   const loaded = await loadCad(pathValue, config, signal)
   if (isErrorResult(loaded)) return loaded
-  return inspect(loaded.document, loaded.inputPath, loaded.format, loaded.warnings)
+  return inspect(loaded.document, loaded.inputPath, loaded.format, loaded.warnings, config.maxWarningSamples ?? 50)
 }
 
 export async function extractCad(args: { path: string; section: 'texts' | 'layers' | 'blocks' | 'entities'; layers?: string[]; entityTypes?: string[]; limit?: number; saveAs?: 'json' | 'csv'; outputName?: string }, config: Config, signal?: AbortSignal) {
@@ -379,7 +393,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
           format: 'dxf', outputPath: output,
           conversionValidation: { status: 'failed', checks: { textValuesMatch: false, entityTypesMatch: false, layersMatch: false }, differences: ['The exported DXF could not be parsed.'], unpreservedObjectTypes: Object.keys(source.entityTypes) },
           lossRisk: { level: 'severe', reasons: ['The exported DXF could not be parsed.'] },
-          warnings: [...loaded.warnings, ...conversionWarnings],
+          warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings], config.maxWarningSamples ?? 50),
         }
       }
       const conversionValidation = validateConversion(source, semanticSnapshot(converted.document))
@@ -393,13 +407,13 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
           error: { code: 'CONVERSION_VALIDATION_FAILED', message: 'The exported DXF did not pass semantic validation.', details: { differences: conversionValidation.differences } },
           format: 'dxf', outputPath: output, conversionValidation, lossRisk,
           unpreservedObjectTypes: conversionValidation.unpreservedObjectTypes,
-          warnings: [...loaded.warnings, ...conversionWarnings, ...converted.warnings],
+          warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
         }
       }
       return {
         ok: true, format: 'dxf', outputPath: output, conversionValidation, lossRisk,
         unpreservedObjectTypes: conversionValidation.unpreservedObjectTypes,
-        warnings: [...loaded.warnings, ...conversionWarnings, ...converted.warnings],
+        warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
       }
     }
     const drawing = makeSvg(loaded.document, args.layers, args.background)
@@ -422,7 +436,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
       ok: true, format: args.format, outputPath: output, bounds: drawing.bounds,
       sourceEntityCount: drawing.sourceEntityCount, renderedPrimitiveCount: drawing.renderedPrimitiveCount,
       unsupportedEntityTypes: drawing.unsupportedEntityTypes, previewCompleteness: drawing.previewCompleteness,
-      warnings: loaded.warnings,
+      warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
     }
   } catch (cause) {
     return error('EXPORT_FAILED', cause instanceof Error ? cause.message : String(cause))

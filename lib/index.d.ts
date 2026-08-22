@@ -9,11 +9,18 @@ export interface Config {
     maxExtractItems: number;
     maxImageDimension: number;
     maxImagePixels?: number;
+    maxWarningSamples?: number;
 }
 export declare const Config: Schema<Config>;
 type Warning = {
     code: string;
     message: string;
+};
+type WarningSummary = {
+    total: number;
+    byCode: Record<string, number>;
+    samples: Warning[];
+    truncated: boolean;
 };
 type ErrorResult = {
     ok: false;
@@ -56,7 +63,7 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
         entityCount: number;
     }[];
     textCount: number;
-    warnings: Warning[];
+    warnings: WarningSummary;
 }>;
 export declare function extractCad(args: {
     path: string;
@@ -151,7 +158,7 @@ export declare function exportCad(args: {
         level: string;
         reasons: string[];
     };
-    warnings: Warning[];
+    warnings: WarningSummary;
     unpreservedObjectTypes?: undefined;
     bounds?: undefined;
     sourceEntityCount?: undefined;
@@ -184,7 +191,7 @@ export declare function exportCad(args: {
         reasons: string[];
     };
     unpreservedObjectTypes: string[];
-    warnings: Warning[];
+    warnings: WarningSummary;
     bounds?: undefined;
     sourceEntityCount?: undefined;
     renderedPrimitiveCount?: undefined;
@@ -209,7 +216,7 @@ export declare function exportCad(args: {
         reasons: string[];
     };
     unpreservedObjectTypes: string[];
-    warnings: Warning[];
+    warnings: WarningSummary;
     error?: undefined;
     bounds?: undefined;
     sourceEntityCount?: undefined;
@@ -234,7 +241,7 @@ export declare function exportCad(args: {
     renderedPrimitiveCount: number;
     unsupportedEntityTypes: Record<string, number>;
     previewCompleteness: number;
-    warnings: Warning[];
+    warnings: WarningSummary;
     error?: undefined;
     conversionValidation?: undefined;
     lossRisk?: undefined;
