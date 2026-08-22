@@ -137,6 +137,12 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
         }[];
         emptyLayers: string[];
     };
+    qualityChecks: {
+        duplicateHandles: string[];
+        zeroLengthLines: number;
+        invalidRadii: number;
+        openPolylines: number;
+    };
     textCount: number;
     warnings: WarningSummary;
 }>;

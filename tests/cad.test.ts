@@ -20,6 +20,7 @@ describe('DWG support', () => {
       expect(result.bounds).toEqual(expect.objectContaining({ header: expect.anything(), actual: expect.anything(), unableTypes: expect.any(Object) }))
       expect(result.geometryMetrics).toEqual(expect.objectContaining({ totalLength: expect.any(Number), perimeter: expect.any(Number), area: expect.any(Number) }))
       expect(result.layerUsage).toEqual(expect.objectContaining({ layers: expect.any(Array), emptyLayers: expect.any(Array) }))
+      expect(result.qualityChecks).toEqual(expect.objectContaining({ duplicateHandles: expect.any(Array), zeroLengthLines: expect.any(Number), invalidRadii: expect.any(Number), openPolylines: expect.any(Number) }))
     }
   })
 

@@ -282,6 +282,18 @@ function layerUsage(document: CadDocument) {
   return { layers, emptyLayers: layers.filter(layer => layer.empty).map(layer => layer.name) }
 }
 
+function qualityChecks(document: CadDocument) {
+  const handles = new Set<number>(); const duplicateHandles: string[] = []; let zeroLengthLines = 0; let invalidRadii = 0; let openPolylines = 0
+  for (const entity of entities(document)) {
+    if (handles.has(entity.handle)) duplicateHandles.push(`0x${entity.handle.toString(16).toUpperCase()}`); else handles.add(entity.handle)
+    const kind = entityName(entity)
+    if (kind === 'Line') { const a = point(entity.startPoint); const b = point(entity.endPoint); if (a && b && a.x === b.x && a.y === b.y) zeroLengthLines++ }
+    if (kind === 'Circle' || kind === 'Arc') if (!Number.isFinite(Number(entity.radius)) || Number(entity.radius) <= 0) invalidRadii++
+    if (['LwPolyline', 'Polyline2D', 'Polyline3D'].includes(kind) && !entity.isClosed) openPolylines++
+  }
+  return { duplicateHandles, zeroLengthLines, invalidRadii, openPolylines }
+}
+
 async function loadCad(input: string, config: Config, signal?: AbortSignal): Promise<CadResult | ReturnType<typeof error>> {
   if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before reading the drawing.')
   const inputPath = path.resolve(input)
@@ -368,6 +380,7 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     scope: scopeStats(document),
     geometryMetrics: geometryMetrics(document),
     layerUsage: layerUsage(document),
+    qualityChecks: qualityChecks(document),
     textCount: all.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity))).length,
     warnings: summarizeWarnings(warnings, maxWarningSamples),
   }
