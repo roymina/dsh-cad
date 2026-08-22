@@ -282,6 +282,9 @@ const svgRenderers: Record<string, SvgRenderer> = {
   Ellipse: renderCurve,
   Spline: renderCurve,
   Hatch: renderHatch,
+  Point: renderPoint,
+  Solid: renderSolid,
+  Leader: renderLeader,
   TextEntity: renderText,
   MText: renderText,
 }
@@ -310,6 +313,22 @@ function renderCurve(entity: CadEntity, color: string) {
 function renderHatch(entity: CadEntity, color: string) {
   const path = (entity.paths ?? []).map((boundary: CadEntity) => svgPath(boundary.getPoints?.(96) ?? [], true)).filter(Boolean).join(' ')
   return path ? `<path d="${path}" fill="${entity.isSolid ? color : 'none'}" fill-rule="evenodd" stroke="${color}"/>` : ''
+}
+
+function renderPoint(entity: CadEntity, color: string) {
+  const location = point(entity.location)
+  return location ? `<circle cx="${location.x}" cy="${-location.y}" r="1" fill="${color}"/>` : ''
+}
+
+function renderSolid(entity: CadEntity, color: string) {
+  const points = [entity.firstCorner, entity.secondCorner, entity.thirdCorner, entity.fourthCorner].map(point).filter(Boolean) as Array<{ x: number; y: number }>
+  const values = points.map(value => `${value.x},${-value.y}`).join(' ')
+  return values ? `<polygon points="${values}" fill="${color}" stroke="${color}"/>` : ''
+}
+
+function renderLeader(entity: CadEntity, color: string) {
+  const path = svgPath(entity.vertices ?? [])
+  return path ? `<path d="${path}" fill="none" stroke="${color}"/>` : ''
 }
 
 function hasCircularBlockReference(block: CadEntity, blockStack = new Set<string>()): boolean {
