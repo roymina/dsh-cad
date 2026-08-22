@@ -156,6 +156,16 @@ export declare function extractCad(args: {
     offset?: number;
     search?: string;
     handle?: string;
+    window?: {
+        minX: number;
+        minY: number;
+        maxX: number;
+        maxY: number;
+    };
+    nearest?: {
+        x: number;
+        y: number;
+    };
     saveAs?: 'json' | 'csv';
     outputName?: string;
     bom?: boolean;
