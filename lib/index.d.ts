@@ -160,6 +160,8 @@ export declare function extractCad(args: {
         colorIndex?: undefined;
     })[];
 } | {
+    bytes: number;
+    sha256: string;
     outputPath: string;
     ok: boolean;
     section: string;
@@ -222,16 +224,25 @@ export declare function exportCad(args: {
         reasons: string[];
     };
     warnings: WarningSummary;
-    unpreservedObjectTypes?: undefined;
-    bounds?: undefined;
-    layout?: undefined;
-    sourceEntityCount?: undefined;
-    expandedEntityCount?: undefined;
-    renderedPrimitiveCount?: undefined;
-    skippedEntityCount?: undefined;
-    unsupportedEntityTypes?: undefined;
-    previewCompleteness?: undefined;
 } | {
+    conversionValidation: {
+        status: "passed" | "failed";
+        checks: {
+            textValuesMatch: boolean;
+            entityTypesMatch: boolean;
+            layersMatch: boolean;
+        };
+        differences: string[];
+        unpreservedObjectTypes: string[];
+    };
+    lossRisk: {
+        level: "none" | "severe" | "warning";
+        reasons: string[];
+    };
+    unpreservedObjectTypes: string[];
+    warnings: WarningSummary;
+    bytes: number;
+    sha256: string;
     ok: boolean;
     error: {
         code: string;
@@ -242,6 +253,7 @@ export declare function exportCad(args: {
     };
     format: string;
     outputPath: string;
+} | {
     conversionValidation: {
         status: "passed" | "failed";
         checks: {
@@ -258,44 +270,20 @@ export declare function exportCad(args: {
     };
     unpreservedObjectTypes: string[];
     warnings: WarningSummary;
-    bounds?: undefined;
-    layout?: undefined;
-    sourceEntityCount?: undefined;
-    expandedEntityCount?: undefined;
-    renderedPrimitiveCount?: undefined;
-    skippedEntityCount?: undefined;
-    unsupportedEntityTypes?: undefined;
-    previewCompleteness?: undefined;
-} | {
+    bytes: number;
+    sha256: string;
     ok: boolean;
     format: string;
     outputPath: string;
-    conversionValidation: {
-        status: "passed" | "failed";
-        checks: {
-            textValuesMatch: boolean;
-            entityTypesMatch: boolean;
-            layersMatch: boolean;
-        };
-        differences: string[];
-        unpreservedObjectTypes: string[];
-    };
-    lossRisk: {
-        level: "none" | "severe" | "warning";
-        reasons: string[];
-    };
-    unpreservedObjectTypes: string[];
-    warnings: WarningSummary;
     error?: undefined;
-    bounds?: undefined;
-    layout?: undefined;
-    sourceEntityCount?: undefined;
-    expandedEntityCount?: undefined;
-    renderedPrimitiveCount?: undefined;
-    skippedEntityCount?: undefined;
-    unsupportedEntityTypes?: undefined;
-    previewCompleteness?: undefined;
 } | {
+    renderedPrimitiveCount: number;
+    skippedEntityCount: number;
+    unsupportedEntityTypes: Record<string, number>;
+    previewCompleteness: number;
+    warnings: WarningSummary;
+    bytes: number;
+    sha256: string;
     ok: boolean;
     format: "svg" | "png";
     outputPath: string;
@@ -312,15 +300,9 @@ export declare function exportCad(args: {
     layout: string;
     sourceEntityCount: number;
     expandedEntityCount: number;
-    renderedPrimitiveCount: number;
-    skippedEntityCount: number;
-    unsupportedEntityTypes: Record<string, number>;
-    previewCompleteness: number;
-    warnings: WarningSummary;
     error?: undefined;
     conversionValidation?: undefined;
     lossRisk?: undefined;
-    unpreservedObjectTypes?: undefined;
 }>;
 export declare function apply(ctx: Context, config: Config): void;
 export {};

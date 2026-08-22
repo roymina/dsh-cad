@@ -2,6 +2,7 @@ import { readFile, lstat, mkdir, realpath, rm, writeFile } from 'node:fs/promise
 import { createWriteStream } from 'node:fs'
 import { finished } from 'node:stream/promises'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -81,6 +82,11 @@ const jsonOutput = { schema: { type: 'json' as const }, render: text }
 
 function error(code: string, message: string, details?: Record<string, any>): ErrorResult {
   return { ok: false, error: { code, message, ...(details ? { details } : {}) } }
+}
+
+async function outputMetadata(filePath: string) {
+  const bytes = await readFile(filePath)
+  return { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
 }
 
 const namedBackgrounds = new Set(['black', 'white', 'gray', 'silver', 'red', 'green', 'blue', 'yellow', 'cyan', 'magenta'])
@@ -635,7 +641,7 @@ export async function extractCad(args: { path: string; section: 'texts' | 'layer
     const maxBytes = config.maxCsvBytes ?? 20_000_000
     if (Buffer.byteLength(payload, 'utf8') > maxBytes) return error('OUTPUT_LIMIT_EXCEEDED', 'The report exceeds the configured byte limit.', { maxBytes })
     await writeFile(output, payload, { encoding: 'utf8', flag: 'wx' })
-    return { ...result, outputPath: output }
+    return { ...result, outputPath: output, ...(await outputMetadata(output)) }
   } catch (cause: any) {
     return error(cause?.code === 'EEXIST' ? 'OUTPUT_EXISTS' : 'OUTPUT_FAILED', cause instanceof Error ? cause.message : String(cause))
   }
@@ -701,13 +707,13 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
         return {
           ok: false,
           error: { code: 'CONVERSION_VALIDATION_FAILED', message: 'The exported DXF did not pass semantic validation.', details: { differences: conversionValidation.differences } },
-          format: 'dxf', outputPath: output, conversionValidation, lossRisk,
+          format: 'dxf', outputPath: output, ...(await outputMetadata(output)), conversionValidation, lossRisk,
           unpreservedObjectTypes: conversionValidation.unpreservedObjectTypes,
           warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
         }
       }
       return {
-        ok: true, format: 'dxf', outputPath: output, conversionValidation, lossRisk,
+        ok: true, format: 'dxf', outputPath: output, ...(await outputMetadata(output)), conversionValidation, lossRisk,
         unpreservedObjectTypes: conversionValidation.unpreservedObjectTypes,
         warnings: summarizeWarnings([...loaded.warnings, ...conversionWarnings, ...converted.warnings], config.maxWarningSamples ?? 50),
       }
@@ -736,7 +742,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
     }
     return {
       ok: true, format: args.format, outputPath: output, bounds: drawing.bounds,
-      layout: args.layout ?? 'Model', sourceEntityCount: drawing.sourceEntityCount, expandedEntityCount: drawing.expandedEntityCount,
+      layout: args.layout ?? 'Model', sourceEntityCount: drawing.sourceEntityCount, expandedEntityCount: drawing.expandedEntityCount, ...(await outputMetadata(output)),
       renderedPrimitiveCount: drawing.renderedPrimitiveCount, skippedEntityCount: drawing.skippedEntityCount,
       unsupportedEntityTypes: drawing.unsupportedEntityTypes, previewCompleteness: drawing.previewCompleteness,
       warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
