@@ -161,6 +161,7 @@ export declare function extractCad(args: {
     })[];
 } | {
     bytes: number;
+    outputBytes: number;
     sha256: string;
     outputPath: string;
     ok: boolean;
@@ -242,6 +243,7 @@ export declare function exportCad(args: {
     unpreservedObjectTypes: string[];
     warnings: WarningSummary;
     bytes: number;
+    outputBytes: number;
     sha256: string;
     ok: boolean;
     error: {
@@ -271,6 +273,7 @@ export declare function exportCad(args: {
     unpreservedObjectTypes: string[];
     warnings: WarningSummary;
     bytes: number;
+    outputBytes: number;
     sha256: string;
     ok: boolean;
     format: string;
@@ -283,7 +286,10 @@ export declare function exportCad(args: {
     previewCompleteness: number;
     warnings: WarningSummary;
     bytes: number;
+    outputBytes: number;
     sha256: string;
+    imageWidth: number;
+    imageHeight: number;
     ok: boolean;
     format: "svg" | "png";
     outputPath: string;

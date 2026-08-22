@@ -46,7 +46,7 @@
 ## 阶段四：产品化（Harness / 发布 / 文档）
 
 - [x] 4.1 为成功与失败结果建立稳定输出 schema；文档化所有错误码（`NEXT_PLAN.md` §9）与可恢复建议。
-- [ ] 4.2 Harness 展示增强：`cad_export` 返回真实图像尺寸、输出字节数、哈希、支持/不支持统计与完整度；Harness 支持时直接展示 PNG/SVG 预览或可点击产物；提供 read/parse/normalize/render/write 阶段进度。
+- [x] 4.2 Harness 展示增强：`cad_export` 返回真实图像尺寸、输出字节数、哈希、支持/不支持统计与完整度；Harness 支持时直接展示 PNG/SVG 预览或可点击产物；提供 read/parse/normalize/render/write 阶段进度。
 - [x] 4.3 工具描述中列出合法实体类型、Layout 范围、预览局限与转换数据损失风险。
 - [ ] 4.4 分页与过滤：`offset`/游标分页、文本/正则/大小写不敏感搜索、按 Handle 查询单实体、按空间窗口/bounding box 查询、按 Layout 查询、图层与实体类型过滤大小写不敏感、使用稳定 DXF 类型名并在 inspect 中返回可用类型。
 - [ ] 4.5 块与属性：Insert 属性提取、块定义树与嵌套关系、每个块引用次数与插入位置、动态块/匿名块关联信息、循环引用检测、受深度/实例限制的块展开。

@@ -86,7 +86,7 @@ function error(code: string, message: string, details?: Record<string, any>): Er
 
 async function outputMetadata(filePath: string) {
   const bytes = await readFile(filePath)
-  return { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
+  return { bytes: bytes.length, outputBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
 }
 
 const namedBackgrounds = new Set(['black', 'white', 'gray', 'silver', 'red', 'green', 'blue', 'yellow', 'cyan', 'magenta'])
@@ -720,6 +720,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
     }
     const drawing = makeSvg(loaded.document, args.layers, args.background, config.maxBlockDepth ?? 16, config.maxBlockInstances ?? 10_000, args.layout)
     if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before rendering.')
+    let outputDimensions = { imageWidth: drawing.bounds.max.x - drawing.bounds.min.x, imageHeight: drawing.bounds.max.y - drawing.bounds.min.y }
     if (args.format === 'svg') {
       const maxBytes = config.maxSvgBytes ?? 20_000_000
       if (Buffer.byteLength(drawing.svg, 'utf8') > maxBytes) return error('RENDER_LIMIT_EXCEEDED', 'The SVG exceeds the configured byte limit.', { maxBytes })
@@ -735,6 +736,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
         return error('RENDER_LIMIT_EXCEEDED', 'The requested PNG dimensions exceed the configured limits.', { width: targetWidth, height: targetHeight, maxImageDimension: config.maxImageDimension, maxImagePixels: maxPixels })
       }
       const rendered = new Resvg(drawing.svg, { fitTo: args.height ? { mode: 'height', value: targetHeight } : { mode: 'width', value: targetWidth }, background: args.background === 'transparent' ? undefined : args.background ?? 'white' }).render()
+      outputDimensions = { imageWidth: rendered.width, imageHeight: rendered.height }
       if (rendered.width * rendered.height > maxPixels) return error('RENDER_LIMIT_EXCEEDED', 'The rendered PNG exceeds the configured pixel limit.', { width: rendered.width, height: rendered.height, maxImagePixels: maxPixels })
       const png = rendered.asPng()
       if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled after rendering.')
@@ -742,7 +744,7 @@ export async function exportCad(args: { path: string; format: 'svg' | 'png' | 'd
     }
     return {
       ok: true, format: args.format, outputPath: output, bounds: drawing.bounds,
-      layout: args.layout ?? 'Model', sourceEntityCount: drawing.sourceEntityCount, expandedEntityCount: drawing.expandedEntityCount, ...(await outputMetadata(output)),
+      layout: args.layout ?? 'Model', sourceEntityCount: drawing.sourceEntityCount, expandedEntityCount: drawing.expandedEntityCount, ...outputDimensions, ...(await outputMetadata(output)),
       renderedPrimitiveCount: drawing.renderedPrimitiveCount, skippedEntityCount: drawing.skippedEntityCount,
       unsupportedEntityTypes: drawing.unsupportedEntityTypes, previewCompleteness: drawing.previewCompleteness,
       warnings: summarizeWarnings(loaded.warnings, config.maxWarningSamples ?? 50),
