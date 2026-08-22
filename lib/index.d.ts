@@ -152,7 +152,10 @@ export declare function exportCad(args: {
     warnings: Warning[];
     unpreservedObjectTypes?: undefined;
     bounds?: undefined;
-    renderedEntityCount?: undefined;
+    sourceEntityCount?: undefined;
+    renderedPrimitiveCount?: undefined;
+    unsupportedEntityTypes?: undefined;
+    previewCompleteness?: undefined;
 } | {
     ok: boolean;
     error: {
@@ -181,7 +184,10 @@ export declare function exportCad(args: {
     unpreservedObjectTypes: string[];
     warnings: Warning[];
     bounds?: undefined;
-    renderedEntityCount?: undefined;
+    sourceEntityCount?: undefined;
+    renderedPrimitiveCount?: undefined;
+    unsupportedEntityTypes?: undefined;
+    previewCompleteness?: undefined;
 } | {
     ok: boolean;
     format: string;
@@ -204,7 +210,10 @@ export declare function exportCad(args: {
     warnings: Warning[];
     error?: undefined;
     bounds?: undefined;
-    renderedEntityCount?: undefined;
+    sourceEntityCount?: undefined;
+    renderedPrimitiveCount?: undefined;
+    unsupportedEntityTypes?: undefined;
+    previewCompleteness?: undefined;
 } | {
     ok: boolean;
     format: "svg" | "png";
@@ -219,7 +228,10 @@ export declare function exportCad(args: {
             y: number;
         };
     };
-    renderedEntityCount: number;
+    sourceEntityCount: number;
+    renderedPrimitiveCount: number;
+    unsupportedEntityTypes: Record<string, number>;
+    previewCompleteness: number;
     warnings: Warning[];
     error?: undefined;
     conversionValidation?: undefined;

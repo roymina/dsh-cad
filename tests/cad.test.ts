@@ -21,6 +21,15 @@ describe('DWG support', () => {
       const inspected = await inspectCad(secondFixture, config)
       expect(inspected.ok).toBe(true)
       if (inspected.ok) expect(inspected.layers.some(layer => layer.isFrozen)).toBe(true)
+      const svg = await exportCad({ path: secondFixture, format: 'svg', outputName: 'second.svg' }, config)
+      expect(svg.ok).toBe(true)
+      if (svg.ok) {
+        const document = await readFile(svg.outputPath, 'utf8')
+        const svgPrimitiveCount = (document.match(/<(?:line|polyline|circle|text)\b/g) ?? []).length
+        expect(svg.renderedPrimitiveCount).toBe(svgPrimitiveCount)
+        expect(svg.sourceEntityCount).toBe(svg.renderedPrimitiveCount + Object.values(svg.unsupportedEntityTypes).reduce((sum, count) => sum + count, 0))
+        expect(svg.previewCompleteness).toBe(svg.renderedPrimitiveCount / svg.sourceEntityCount)
+      }
       const dxf = await exportCad({ path: secondFixture, format: 'dxf', outputName: 'second.dxf' }, config)
       expect(dxf.ok).toBe(true)
       if (dxf.ok) expect((await readFile(dxf.outputPath, 'utf8')).includes('SECTION')).toBe(true)
