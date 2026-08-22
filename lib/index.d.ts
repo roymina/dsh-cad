@@ -47,17 +47,31 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
         name: string;
     };
     bounds: {
-        min: {
-            x: number;
-            y: number;
-            z: number;
-        };
-        max: {
-            x: number;
-            y: number;
-            z: number;
-        };
-    } | null;
+        header: {
+            min: {
+                x: number;
+                y: number;
+                z: number;
+            };
+            max: {
+                x: number;
+                y: number;
+                z: number;
+            };
+        } | null;
+        actual: {
+            min: {
+                x: number;
+                y: number;
+            };
+            max: {
+                x: number;
+                y: number;
+            };
+        } | null;
+        matchesHeader: boolean;
+        unableTypes: Record<string, number>;
+    };
     entityCount: number;
     entityTypes: Record<string, number>;
     layers: {
@@ -71,6 +85,37 @@ export declare function inspectCad(pathValue: string, config: Config, signal?: A
         name: any;
         entityCount: number;
     }[];
+    scope: {
+        modelSpace: {
+            entityCount: number;
+        };
+        paperSpaces: {
+            name: string;
+            entityCount: number;
+        }[];
+        blocks: {
+            name: any;
+            entityCount: number;
+            referenceCount: number;
+        }[];
+        insertCount: number;
+        insertReferences: Record<string, number>;
+        maxNestedDepth: number;
+        circularReferenceCount: number;
+        visibility: {
+            visible: number;
+            hidden: number;
+            frozen: number;
+            off: number;
+            nonPlot: number;
+        };
+        resources: {
+            xrefs: number;
+            images: number;
+            fonts: number;
+            proxyEntities: number;
+        };
+    };
     textCount: number;
     warnings: WarningSummary;
 }>;

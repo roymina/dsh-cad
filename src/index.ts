@@ -176,6 +176,50 @@ function bounds(document: CadDocument) {
     : null
 }
 
+function entityBounds(document: CadDocument, source: CadEntity[] = entities(document)) {
+  const unableTypes: Record<string, number> = {}
+  const points = source.flatMap(entity => {
+    let box: any
+    try { box = entity.getBoundingBox?.() } catch { const kind = entityName(entity); unableTypes[kind] = (unableTypes[kind] ?? 0) + 1; return [] }
+    if (!box) { const kind = entityName(entity); unableTypes[kind] = (unableTypes[kind] ?? 0) + 1 }
+    return [point(box?.min), point(box?.max)].filter(Boolean) as Array<{ x: number; y: number }>
+  })
+  if (!points.length) return { bounds: null, unableTypes }
+  return { bounds: { min: { x: Math.min(...points.map(item => item.x)), y: Math.min(...points.map(item => item.y)) }, max: { x: Math.max(...points.map(item => item.x)), y: Math.max(...points.map(item => item.y)) } }, unableTypes }
+}
+
+function scopeStats(document: CadDocument) {
+  const model = entities(document)
+  const paperSpaces = Array.from(document.layouts ?? []).filter((layout: any) => layout.isPaperSpace && layout.associatedBlock)
+    .map((layout: any) => ({ name: String(layout.name), entityCount: Array.from(layout.associatedBlock.entities ?? []).length }))
+  const references: Record<string, number> = {}
+  let maxNestedDepth = 0
+  let circularReferenceCount = 0
+  const visibility = { visible: 0, hidden: 0, frozen: 0, off: 0, nonPlot: 0 }
+  for (const entity of model) {
+    const layer = entity.layer
+    if (entity.isInvisible) visibility.hidden++
+    else if (layer?.isOn === false) visibility.off++
+    else if ((Number(layer?.layerFlags ?? 0) & LayerFlags.Frozen) !== 0) visibility.frozen++
+    else if (layer?.plotFlag === false) visibility.nonPlot++
+    else visibility.visible++
+  }
+  for (const entity of model) if (entityName(entity) === 'Insert') {
+    const name = String(entity.block?.name ?? 'UNKNOWN')
+    references[name] = (references[name] ?? 0) + 1
+    let depth = 1; let block = entity.block; const seen = new Set<string>()
+    while (block) { const name = String(block.name); if (seen.has(name)) { circularReferenceCount++; break }; seen.add(name); depth++; const nested = Array.from(block.entities ?? []).find((child: any) => entityName(child) === 'Insert') as any; block = nested?.block }
+    maxNestedDepth = Math.max(maxNestedDepth, depth)
+  }
+  const resources = {
+    xrefs: blocks(document).filter((block: any) => block.source || block.xrefFile || block.isXRef).length,
+    images: Array.from(document.imageDefinitions ?? []).length,
+    fonts: Array.from(document.textStyles ?? []).length,
+    proxyEntities: model.filter(entity => (entity.proxyGeometries?.length ?? 0) > 0).length,
+  }
+  return { modelSpace: { entityCount: model.length }, paperSpaces, blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length, referenceCount: references[String(block.name)] ?? 0 })), insertCount: Object.values(references).reduce((sum, count) => sum + count, 0), insertReferences: references, maxNestedDepth, circularReferenceCount, visibility, resources }
+}
+
 async function loadCad(input: string, config: Config, signal?: AbortSignal): Promise<CadResult | ReturnType<typeof error>> {
   if (signal?.aborted) return error('CANCELLED', 'Operation was cancelled before reading the drawing.')
   const inputPath = path.resolve(input)
@@ -224,12 +268,13 @@ function inspect(document: CadDocument, inputPath: string, format: string, warni
     version: versionInfo(document.header?.version),
     codePage: document.header?.codePage ?? null,
     units: unitsInfo(document.header?.insUnits),
-    bounds: bounds(document),
+    bounds: (() => { const actual = entityBounds(document); return { header: bounds(document), actual: actual.bounds, matchesHeader: JSON.stringify(bounds(document)) === JSON.stringify(actual.bounds), unableTypes: actual.unableTypes } })(),
     entityCount: all.length,
     entityTypes: byType,
     layers: layerRows(document),
     entityCountByLayer: byLayer,
     blocks: blocks(document).map((block: any) => ({ name: block.name, entityCount: Array.from(block.entities ?? []).length })),
+    scope: scopeStats(document),
     textCount: all.filter(entity => ['TextEntity', 'MText', 'AttributeEntity'].includes(entityName(entity))).length,
     warnings: summarizeWarnings(warnings, maxWarningSamples),
   }
@@ -244,7 +289,7 @@ function entityRecord(entity: CadEntity) {
   if (kind === 'Line') return { ...base, start: point(entity.startPoint), end: point(entity.endPoint) }
   if (kind === 'Circle') return { ...base, center: point(entity.center), radius: entity.radius ?? null }
   if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') {
-    return { ...base, vertices: Array.from(entity.vertices ?? []).map((vertex: any) => point(vertex.location ?? vertex)).filter(Boolean), closed: Boolean(entity.isClosed ?? (entity._flags & 1)) }
+    return { ...base, vertices: Array.from(entity.vertices ?? []).map((vertex: any) => point(vertex.location ?? vertex)).filter(Boolean), closed: Boolean(entity.isClosed) }
   }
   if (kind === 'Insert') return { ...base, block: entity.block?.name ?? entity.block?.record?.name ?? null, position: point(entity.insertPoint), rotation: entity.rotation ?? 0 }
   return base
@@ -273,7 +318,7 @@ function drawingPoints(entity: CadEntity): Array<{ x: number; y: number }> {
   if (kind === 'Line') return [point(entity.startPoint), point(entity.endPoint)].filter(Boolean) as Array<{ x: number; y: number }>
   if (kind === 'LwPolyline' || kind === 'Polyline2D' || kind === 'Polyline3D') return Array.from(entity.vertices ?? []).map((v: any) => point(v.location ?? v)).filter(Boolean) as Array<{ x: number; y: number }>
   if (kind === 'Circle') {
-    const center = point(entity.center); const radius = Number(entity.radius ?? entity._radius)
+    const center = point(entity.center); const radius = Number(entity.radius ?? 0)
     return center && Number.isFinite(radius) ? [{ x: center.x - radius, y: center.y - radius }, { x: center.x + radius, y: center.y + radius }] : []
   }
   const location = point(entity.insertPoint ?? entity.center)
@@ -297,7 +342,7 @@ const svgRenderers: Record<string, SvgRenderer> = {
   Polyline2D: renderPolyline,
   Polyline3D: renderPolyline,
   Circle(entity, color) {
-    const center = point(entity.center); const radius = Number(entity.radius ?? entity._radius)
+    const center = point(entity.center); const radius = Number(entity.radius ?? 0)
     return center && Number.isFinite(radius) ? `<circle cx="${center.x}" cy="${-center.y}" r="${radius}" fill="none" stroke="${color}"/>` : ''
   },
   Arc: renderCurve,
@@ -336,8 +381,8 @@ function renderPolyline(entity: CadEntity, color: string) {
 function renderText(entity: CadEntity, color: string) {
   const aligned = Number(entity.horizontalAlignment ?? 0) !== 0 || Number(entity.verticalAlignment ?? 0) !== 0
   const at = point(aligned ? entity.alignmentPoint ?? entity.insertPoint : entity.insertPoint)
-  const value = String(entity.plainText ?? entity.value ?? entity._value ?? '')
-  const size = Number(entity.height ?? entity._height ?? 2.5)
+  const value = String(entity.plainText ?? entity.value ?? '')
+  const size = Number(entity.height ?? 2.5)
   if (!at) return ''
   const attachment = entity.attachmentPoint
   const horizontal = Number(entity.horizontalAlignment ?? 0)

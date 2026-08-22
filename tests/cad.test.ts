@@ -16,6 +16,8 @@ describe('DWG support', () => {
       expect(result.warnings).toEqual(expect.objectContaining({ total: expect.any(Number), byCode: expect.any(Object), samples: expect.any(Array), truncated: expect.any(Boolean) }))
       expect(result.version).toEqual(expect.objectContaining({ code: expect.any(Number), name: expect.any(String), productRange: expect.any(String) }))
       expect(result.units).toEqual(expect.objectContaining({ code: expect.any(Number), name: expect.any(String) }))
+      expect(result.scope).toEqual(expect.objectContaining({ modelSpace: expect.any(Object), paperSpaces: expect.any(Array), insertCount: expect.any(Number), visibility: expect.any(Object) }))
+      expect(result.bounds).toEqual(expect.objectContaining({ header: expect.anything(), actual: expect.anything(), unableTypes: expect.any(Object) }))
     }
   })
 
