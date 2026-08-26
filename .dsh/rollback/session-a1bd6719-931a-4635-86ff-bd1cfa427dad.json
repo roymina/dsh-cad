@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "sessionId": "session-a1bd6719-931a-4635-86ff-bd1cfa427dad",
+  "cwd": "D:\\Projects-Personal\\dsh-cad",
+  "updatedAt": 1787758341706,
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit": "ac275f5fbd2a27210e7f3859aee35192068d7f49",
+      "parent": "749d7ca49479797a3a7797a128498645f6dbdadc",
+      "time": 1787757036570,
+      "untracked": [
+        "example-images/Snipaste_2026-08-24_00-04-58.png"
+      ],
+      "truncated": false
+    },
+    {
+      "turn": 2,
+      "commit": "ac275f5fbd2a27210e7f3859aee35192068d7f49",
+      "parent": "ac275f5fbd2a27210e7f3859aee35192068d7f49",
+      "time": 1787757389561,
+      "untracked": [
+        "example-images/Snipaste_2026-08-24_00-04-58.png"
+      ],
+      "truncated": false
+    },
+    {
+      "turn": 3,
+      "commit": "c93c0f3520d403e22c06c768e026c917fb685391",
+      "parent": "ac275f5fbd2a27210e7f3859aee35192068d7f49",
+      "time": 1787757934904,
+      "untracked": [
+        "example-images/Snipaste1.png",
+        "example-images/Snipaste2.png",
+        "screenshots.json"
+      ],
+      "truncated": false,
+      "after": {
+        "commit": "83b0000f4f24f5111f4bc1534b8ebd7b1780e70c",
+        "time": 1787758140838
+      }
+    },
+    {
+      "turn": 4,
+      "commit": "83b0000f4f24f5111f4bc1534b8ebd7b1780e70c",
+      "parent": "83b0000f4f24f5111f4bc1534b8ebd7b1780e70c",
+      "time": 1787758273450,
+      "untracked": [
+        "README.zh.md",
+        "example-images/Snipaste1.png",
+        "example-images/Snipaste2.png",
+        "screenshots.json"
+      ],
+      "truncated": false,
+      "after": {
+        "commit": "cdda31724835a08ae498830c4a24cb3e971fc6de",
+        "time": 1787758341118
+      }
+    }
+  ],
+  "rolls": [],
+  "undos": []
+}

@@ -16,6 +16,7 @@ coverage/
 .DS_Store
 Thumbs.db
 
-# Markdown files (keep only the root README)
+# Markdown files (keep only the root README docs)
 *.md
 !README.md
+!README.zh.md
