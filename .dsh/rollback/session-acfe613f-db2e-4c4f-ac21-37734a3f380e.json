@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "sessionId": "session-acfe613f-db2e-4c4f-ac21-37734a3f380e",
+  "cwd": "D:\\Projects-Personal\\dsh-cad",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit": "a5ad76ae9297428f6b6b5c596702fad5bd2a5105",
+      "parent": "6401a92f62d0a69573afba089a0edb519f7dd0d6",
+      "time": 1787792124732,
+      "untracked": [],
+      "truncated": false
+    }
+  ],
+  "rolls": [],
+  "updatedAt": 1787792125275
+}
